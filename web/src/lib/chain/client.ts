@@ -295,21 +295,21 @@ export async function closeCampaignOnchain(campaignId: string, onchainId: string
 }
 
 /**
- * Split approval for ONE approver: POST /split (fresh World ID proof; returns the attestation + canonical on-chain args), then
+ * Split approval for ONE approver: POST /split (fresh human check; returns the attestation + canonical on-chain args), then
  * `approveSplit(id, creators, amounts, proof)` from that approver's wallet (the contract verifies the proof). The second approver (CAMPAIGNER_AND_ADMIN)
  * repeats this with their own proof and the identical split.
  */
 export async function approveSplit(
   campaignId: string,
   splits: { creatorWallet: string; amount: number }[],
-  worldIdProof: { nullifier_hash: string; proof: string; merkle_root?: string; verification_level?: string; signal?: string },
+  humanCheck: { stepUpToken: string } | { nullifier_hash: string; proof: string; merkle_root?: string; verification_level?: string; signal?: string },
   agentProposalId?: string,
 ) {
   const r = await api<{
     proposal: { id: string; status: string; splitHash: string; approvals: { campaigner: boolean; admin: boolean }; awaiting: string[] };
     attestation: `0x${string}`;
     onchain: { functionName: "approveSplit"; args: { id: string; creators: `0x${string}`[]; amounts: string[]; proof: HumanProof } } | null;
-  }>(`/campaigns/${campaignId}/split`, { json: { splits, worldIdProof, ...(agentProposalId ? { agentProposalId } : {}) } });
+  }>(`/campaigns/${campaignId}/split`, { json: { splits, ...("stepUpToken" in humanCheck ? humanCheck : { worldIdProof: humanCheck }), ...(agentProposalId ? { agentProposalId } : {}) } });
   if (!r.onchain) return { ...r, txHash: null };
   const { chain: cfg } = await getChainConfig();
   if (!cfg.enabled || !cfg.escrow) return { ...r, txHash: null };

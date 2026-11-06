@@ -1,7 +1,8 @@
 "use client";
 import { useState } from "react";
 import type { Campaign } from "@/ui-mocks/data";
-import { agentPass, api, errText, type AgentProposalView, type SplitProposal, type WorldProof } from "./api";
+import { agentPass, api, DEMO, errText, type AgentProposalView, type SplitProposal, type WorldProof } from "./api";
+import { beginStepUp, stepUpFailText, useStepUpReturn, type PendingStepUp } from "./stepup-client";
 import { useAsync, useEscrow } from "./hooks";
 import { Correction, Empty, Loading } from "./Bits";
 import { money } from "./format";
@@ -45,15 +46,35 @@ export function AdminSplits() {
       void agentPass.reportCheck(rv.c.id, r === "cancelled" ? "CANCELLED" : r === "expired" ? "EXPIRED" : "FAILED", rv.p.id, rv.p.splitHash, message).then(() => setPanelKey((k) => k + 1));
     }
     if (r !== "verified" || !proof || !rv) return setErr(`Split not approved. ${worldFailText(null, r, message)}`);
+    await send({ campaignId: rv.c.id, splits: rv.p.splits, proposalId: rv.p.id }, proof);
+  }
+
+  /** The browser leaves for the World ID issuer here; the approval resumes when it returns. */
+  async function continueToWorldId(rv: { c: Campaign; p: AgentProposalView }) {
+    setErr("");
     try {
-      const out = await escrow.approveSplit(rv.c.id, rv.p.splits, proof, rv.p.id);
-      setRes((x) => ({ ...x, [rv.c.id]: { p: out.proposal, tx: out.txHash } }));
+      await beginStepUp({ campaignId: rv.c.id, splits: rv.p.splits, proposalId: rv.p.id }, "bench");
+    } catch (e) {
+      setPanelKey((k) => k + 1);
+      setErr(`Split not approved. ${worldFailText(e)}`);
+    }
+  }
+  async function send(rv: PendingStepUp, check: WorldProof | { stepUpToken: string }) {
+    try {
+      const out = await escrow.approveSplit(rv.campaignId, rv.splits, check, rv.proposalId);
+      setRes((x) => ({ ...x, [rv.campaignId]: { p: out.proposal, tx: out.txHash } }));
     } catch (e) {
       setErr(`Split not approved. ${worldFailText(e)}`);
     } finally {
       setPanelKey((k) => k + 1);
     }
   }
+
+  useStepUpReturn(async (r) => {
+    setPanelKey((k) => k + 1);
+    if (r.token && r.pending) return send(r.pending, { stepUpToken: r.token });
+    setErr(`Split not approved. ${stepUpFailText(r.error)}`);
+  });
 
   if (q.status === "loading") return <Loading rows={3} label="Finding splits waiting on you" />;
   if (q.status === "error") return <Correction what={q.error} onRetry={q.retry} />;
@@ -83,7 +104,8 @@ export function AdminSplits() {
       <p className="muted" style={{ fontSize: "0.875rem" }}>The agent only proposes. Your World ID check is bound to the exact split hash; if the split changed, expired, or the check is cancelled, expired or reused, nothing happens and it is logged below.</p>
       <AgentPassPanel title="Agent Pass activity (all campaigns)" refreshKey={panelKey} />
       {review && <ProposalReasons p={review.p} />}
-      {review && <WorldCheck key={review.p.id} kind="agent-pass" action="clippo-approve-split" signal={`split:${review.c.id}:${review.p.splitHash}`} purpose="Confirm you approve the agent's split" onResult={done} />}
+      {review && !DEMO && <div className="row"><button className="btn sm" onClick={() => continueToWorldId(review)}>Approve this split with World ID</button><button className="btn ghost sm" onClick={() => setReview(null)}>Not now</button></div>}
+      {review && DEMO && <WorldCheck key={review.p.id} kind="agent-pass" action="clippo-approve-split" signal={`split:${review.c.id}:${review.p.splitHash}`} purpose="Confirm you approve the agent's split" onResult={done} />}
     </div>
   );
 }

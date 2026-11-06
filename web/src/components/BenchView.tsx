@@ -1,6 +1,6 @@
 "use client";
 import { OnchainDisputes } from "./OnchainDisputes";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { actions, api, errText, type WorldProof } from "./api";
 import type { QueueItem } from "@/ui-mocks/data";
 import { useAsync, useEscrow, useSession } from "./hooks";
@@ -36,6 +36,8 @@ export function BenchView() {
   const [busy, setBusy] = useState<string | null>(null);
   const [tab, setTab] = useState<(typeof TABS)[number][0]>("all");
   const [done, setDone] = useState<Record<string, string>>({});
+  /* Back from World ID step-up: AdminSplits resumes the approval, so it has to be the open tab. */
+  useEffect(() => { if (/^#stepup/.test(window.location.hash)) setTab("splits"); }, []);
 
   const items = useMemo(() => (q.status === "ready" ? q.data.filter((i) => tab === "all" || i.kind === tab).sort((a, b) => a.rank - b.rank) : []), [q, tab]);
 
