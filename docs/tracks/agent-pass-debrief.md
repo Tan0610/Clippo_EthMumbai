@@ -1,57 +1,43 @@
-# World Agent Pass: integration debrief (draft)
+# World ID Agent Pass: debrief (draft)
 
-```
-Project: Clippo
-Product used: World AgentKit (the "Agent Pass" prize) for the AI split proposer; World ID (IDKit 4.x + Developer Portal v4 verify) for the human check
-Integration type: official SDK, @worldcoin/agentkit 0.2.1 + @worldcoin/idkit 4.6 / idkit-core 4.6
+STATUS (2026-11-06): no live run of the step-up has happened; OIDC client registration at auth.world.org is blocked (see friction notes). Nothing here claims a run. Everything marked FILL AFTER LIVE RUN must stay blank until a real run against the auth.world.org sandbox. Do not submit invented numbers.
 
-1. What the agent does
-   For a human-verified split campaign the agent proposes how to share the pool across creators with approved clips. It signs a
-   SIWE (CAIP-122) AgentKit payload whose requestId is the keccak hash of the split and whose resource is the proposal endpoint.
-   The proposal is written by Claude (advisory): it returns per-creator amounts and reasons as JSON; code re-checks every number
-   (integers in micro-USDC, eligible creators, no duplicates, sum <= net pool, per-creator cap) and falls back to the deterministic
-   planner, with an audit row, on any violation, timeout or malformed answer. Clip text is passed as delimited untrusted data.
-   The agent has no code path that creates a payout, an approval, an attestation or a used proof (guardrail tests enforce it).
+Prize page: https://ethglobal.com/events/mumbai/prizes/world
 
-2. How the agent is tied to a human
-   The agent wallet is registered in AgentBook (World Chain) with `npx @worldcoin/agentkit-cli register <address>`. The campaigner
-   then delegates it to one campaign (POST /api/campaigns/:id/agent); the backend refuses unless AgentBook.lookupHuman(address)
-   returns a human id. Each proposal is re-checked: schema, domain/uri, age, expiry, nonce replay, signature recovery, split binding.
+## What we built (compressed; implemented in code, not yet run live)
 
-3. Where the human check sits
-   Before the escrow can be told to release: POST /api/campaigns/:id/split needs the approver's fresh World ID proof, bound to
-   `split:<campaignId>:<splitHash>` (signal), verified at developer.world.org/api/v4/verify, consumed once. For two-party campaigns the
-   admin does the same with their own proof on the identical hash. Payouts are created only by the on-chain event indexer.
+- Product: auth.world.org (OIDC, auth code + S256 PKCE, step-up with `max_age=0` and an `acr` claim; sandbox issuer `sandbox.auth.world.org`).
+- Protected action: releasing an AI-proposed payout split. Claude proposes (advisory, code re-checks every number); the proposer's identity is an AgentKit/AgentBook-registered wallet (not the prize integration).
+- Flow: Approve -> `POST /api/campaigns/:id/stepup/start` -> redirect to World -> `GET /api/auth/world/callback` (server-side code exchange, ID token validated, bound to the split hash) -> approval recorded. `GET /api/stepup/:attemptId` reports status. Two-party campaigns need both approvers on the identical split.
+- Denied paths: cancelled (`STEPUP_DENIED` 403), expired (`STEPUP_EXPIRED` 410), token or nonce invalid (401), assurance too low (`STEPUP_ASSURANCE`), stale auth (`STEPUP_STALE_AUTH`), wrong identity (`STEPUP_IDENTITY_MISMATCH`), the same person approving as both campaigner and admin (`STEPUP_SAME_HUMAN`), human-built split changed after start (`STEPUP_BINDING_MISMATCH` 409; for an agent proposal `SPLIT_CHANGED` 409 comes first), already used (`STEPUP_CONSUMED` 409), IdP unreachable (`STEPUP_DEPENDENCY` 502). Each leaves the split unreleased.
+- Secrets: client secret and token exchange are server-only; the browser only carries the redirect.
+- Fake identities: sandbox identities are fake and not for production.
 
-4. Backend validation
-   Agent side: validateAgentkitMessage + EIP-191 recovery + AgentBook lookup + DB-unique nonce.
-   Human side: action `clippo-approve-split`, signal hash match, environment pinned server-side, proof hash and nullifier recorded.
+## The four debrief items
 
-5. Journeys tested (automated: src/lib/agentpass/agentpass.integration.test.ts; each leaves the action undone and writes an audit row)
-   success [x]  cancelled [x]  expired proof [x]  expired proposal [x]  AI proposal rejected by code, fallback audited [x]  missing ANTHROPIC_API_KEY -> 503 [x]  repeated/replayed proof [x]
-   wrong approver [x]  split changed after proposal (hash mismatch) [x]  already released [x]  revoked agent [x]  unregistered agent [x]
-   Not yet run with a real World App: ____ (fill in after the live run)
+1. Time to first success
+   FILL AFTER LIVE RUN: ____ (from registering the client to the first approved split).
 
-6. Setup time: ____ ; Docs clarity (1-5): ____   (fill in after registering the agent for real)
+2. Friction encountered
+   FILL AFTER LIVE RUN: ____
+   Observed 2026-11-06 (real, not a hypothesis):
+   - The auth.world.org IdP portals (production https://auth.world.org/portal and sandbox https://sandbox.auth.world.org/portal) accept only 'Continue with Google', described as an 'enterprise Google account'. A personal Gmail account got HTTP 403 `{"error":"account_not_eligible"}` from the sandbox portal after Google sign-in. This blocked OIDC client registration; access has to be granted by World. The portal gives no self-service route and no hint on how to become eligible.
+   - The Developer Portal (separate product) uses Auth0 passwordless email code or 'Continue with World' and has no Google option, so the two portals have different sign-in rules.
+   - The Developer Portal flow differs from the docs: no 'Enable World ID 4.0' banner, no app-type choice, and actions have no per-action verification limit setting.
+   Still hypotheses to check: exact HTTPS redirect URI (localhost http likely unsupported), token endpoint auth method, which `acr` values the sandbox returns.
 
-7. What worked well
-   - AgentBook plus a signed SIWE payload is a clean way to attribute a proposal to a human-backed agent.
-   - The typed SDK (zod payload schema, validateAgentkitMessage, formatSIWEMessage) let us verify without writing crypto code.
+3. Missing capability or documentation
+   Observed so far: no documented path for a hackathon team without an enterprise Google account to register an OIDC client; no self-serve sandbox client. FILL AFTER LIVE RUN: the rest.
 
-8. Friction / gaps (from reading the docs and SDK; confirm against the live run)
-   - "Agent Pass" is not a name in the docs; the product is AgentKit. The Mumbai prize page was not reachable while we researched.
-   - AgentKit is built around x402 resource servers. Using it for an approval flow (not payment gating) meant calling the
-     low-level helpers ourselves; the docs show no Next.js example.
-   - Delegation is just registration: no scope (campaign, amount), expiry or revocation. We added per-campaign binding and revoke on our side.
-   - AgentBook human ids are anonymous, so we cannot prove the registering human is the campaigner. The campaigner's World ID check is a separate step.
-   - No documented fake or test identities for AgentBook; lookups resolve against World Chain mainnet only. We added an explicit demo mode (AGENT_PASS_DEMO) that is labelled everywhere.
-   - `lookupHuman` returns null both for unregistered wallets and for RPC failures, so a flaky RPC looks like "not registered".
-   - IDKit needs the signal passed into the preset to bind a proof to an approval; the backend rejects proofs that are not bound.
+4. The one improvement with the greatest impact
+   FILL AFTER LIVE RUN: ____
 
-9. Fake-identity limitation
-   Agent Pass proofs use fake identities, so this is demo only. Demo-mode records carry mode "demo" in the database and the panel says so.
+## Live-run record (fill in)
 
-10. What we would do next
-   Persist AgentKit nonces and usage in the shared storage interface, scope delegation by amount cap and expiry, run the Claude proposer against a live key and a few real campaigns (not done yet), cover the reasons
-   with the signature, and move the two-party state into the escrow event flow.
-```
+| Item | Result |
+| --- | --- |
+| Fallback note | If the portal stays blocked, a demo may use `WORLD_AUTH_POLICY=either` (agent proposals released with the IDKit proof). That is a fallback and NOT the official Agent Pass integration; say so in the video and here. TODO: decide and record. The OAuth Playground https://oauth-playground.toolsforhumanity.dev/ can show understanding of the flow but cannot test our client or redirect. |
+| Success run | TODO |
+| Cancelled at World (action not taken) | TODO |
+| Expired (action not taken) | TODO |
+| Split changed / wrong identity (action not taken) | TODO |

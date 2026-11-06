@@ -64,6 +64,7 @@ Variables: see [DEPLOY_ENV.md](DEPLOY_ENV.md) (includes the **do not set on Verc
    Recommended for testers: public production URL, protected previews.
 10. **After the URL is known** (use the stable production domain, e.g. `https://clippo-test.vercel.app`):
     - **World Developer Portal**: add the origin/redirect for the staging app; keep `WORLD_ID_ENVIRONMENT=staging`.
+    - **auth.world.org** (not the Developer Portal): auth.world.org step-up (`WORLD_AUTH_CLIENT_ID`, `WORLD_AUTH_CLIENT_SECRET`, `WORLD_AUTH_ISSUER`, `WORLD_AUTH_REDIRECT_URI`, `WORLD_AUTH_TOKEN_AUTH`, `WORLD_AUTH_ACR`, `WORLD_AUTH_POLICY`; see `DEPLOY_ENV.md`) is a SEPARATE registration from the Developer Portal app used for IDKit (`WORLD_ID_*`). The redirect URI must be registered exactly as `https://<host>/api/auth/world/callback` (localhost over http is likely unsupported: use an HTTPS tunnel or the deployed URL). Sandbox client IDs have a lead time of about 1 hour via a World contact. Nothing here has been run live. Full list of manual steps: `docs/WORLD_USER_TODO.md`.
     - **Transak** staging dashboard: webhook `https://<host>/api/onramp/webhook`, referrer domain = host (or `TRANSAK_REFERRER_DOMAIN`), redirect URL.
     - **Instagram/Meta app**: Valid OAuth Redirect URI `https://<host>/api/channels/instagram/oauth/callback`, same value in `INSTAGRAM_REDIRECT_URI`, then redeploy.
     - **SIWE**: nothing to do (Host based). Only set `SIWE_DOMAIN` for a custom domain behind a rewriting proxy.
