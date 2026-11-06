@@ -6,6 +6,7 @@ Built for ETHGlobal. Tracks: Chainlink CRE, World Agent Pass, World IDKit, Arc. 
 
 | Doc | Purpose |
 | --- | --- |
+| `docs/BUILD_LOG.md` | Running record of every change, decisions, and how to go back |
 | `docs/ARCHITECTURE.md` | Diagrams (architecture + money flow) |
 | `docs/TRACKS.md` | Track to code mapping, failure paths, integration debrief template |
 | `docs/DEMO_SCRIPT.md` | Under-5-minute video script |
