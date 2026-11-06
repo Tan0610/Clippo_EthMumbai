@@ -70,6 +70,11 @@ for wallet in $CREATORS; do
   register_human "$wallet"
   echo "linked $wallet human=$(cast call "$ESCROW" 'humanOf(address)(bytes32)' "$wallet" --rpc-url "$RPC")"
 done
+# EXTRA_CREATORS="0x.. 0x.." also links these wallets (the real-YouTube run uses a real creator wallet)
+for wallet in ${EXTRA_CREATORS:-}; do
+  register_human "$wallet"
+  echo "linked extra $wallet"
+done
 i=0
 while [ "$i" -lt "${REGISTER_LARGE_ROWS:-0}" ]; do
   register_human "$(printf '0x%040x' $(( 0x1000 + i )))"
