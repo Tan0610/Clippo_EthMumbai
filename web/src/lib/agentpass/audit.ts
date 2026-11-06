@@ -52,13 +52,6 @@ export function classifyRefusal(e: ApiError): { outcome: AuditOutcome; proofStat
       if (/expire|timed? ?out/i.test(e.message)) return { outcome: "EXPIRED_PROOF", proofStatus: "EXPIRED" };
       return { outcome: "PROOF_INVALID", proofStatus: "INVALID" };
     }
-    case "STEP_UP_CANCELLED": return { outcome: "CANCELLED", proofStatus: "CANCELLED" };
-    case "STEP_UP_EXPIRED":
-    case "STEP_UP_STALE": return { outcome: "EXPIRED_PROOF", proofStatus: "EXPIRED" };
-    case "STEP_UP_WRONG_ACCOUNT": return { outcome: "WRONG_APPROVER", proofStatus: "INVALID" };
-    case "STEP_UP_INVALID":
-    case "STEP_UP_MISMATCH":
-    case "STEP_UP_NOT_ELIGIBLE": return { outcome: "PROOF_INVALID", proofStatus: "INVALID" };
     case "PROPOSAL_EXPIRED": return { outcome: "PROPOSAL_EXPIRED", proofStatus: "NONE" };
     case "SPLIT_CHANGED": return { outcome: "SPLIT_CHANGED", proofStatus: "NONE" };
     case "ALREADY_RELEASED": return { outcome: "ALREADY_RELEASED", proofStatus: "NONE" };
