@@ -3,15 +3,18 @@
  * credentials. Tests inject these through `installDoubles()` (lib/config.ts `setOverride`), never through env flags.
  */
 import { createHash } from "node:crypto";
+import { SignJWT, generateKeyPair, type CryptoKey } from "jose";
 import { setOverride } from "@/lib/config";
 import type { LlmClient, LlmRequest } from "@/lib/ai/llm";
 import type { EscrowReader } from "@/lib/chain/escrow";
 import type { ChainSigner } from "@/lib/chain/signer";
 import type { PlatformClient, PlatformName, VideoInfo } from "@/lib/platforms";
+import { StepUpError } from "@/lib/worldauth/idtoken";
 import { parseVideoId as ytParse } from "@/lib/youtube";
 import { parseXPostId } from "@/lib/platforms/x";
 import { parseInstagramShortcode } from "@/lib/platforms/instagram";
 import type { VideoGenerator, VideoPoll } from "@/lib/video";
+import type { WorldAuthClient, WorldAuthDiscovery } from "@/lib/worldauth/client";
 import type { WorldIdProof, WorldIdResult, WorldIdVerifier } from "@/lib/worldid";
 
 const num = (s: string, mod: number) => parseInt(createHash("sha256").update(s).digest("hex").slice(0, 8), 16) % mod;
@@ -118,6 +121,96 @@ export class FakeWorldId implements WorldIdVerifier {
   }
 }
 
+/* ---------------- World auth (OIDC step-up) ---------------- */
+export const FAKE_WORLD_AUTH = { issuer: "https://fake.auth.world.test", clientId: "test-client-id", clientSecret: "test-client-secret-DO-NOT-LEAK", redirectUri: "http://localhost/api/auth/world/callback" };
+
+export interface FakeIdTokenKnobs {
+  iss?: string;
+  aud?: string;
+  nonce?: string;
+  /** seconds since epoch */
+  exp?: number;
+  acr?: string;
+  amr?: string[];
+  /** seconds since epoch */
+  authTime?: number;
+  sub?: string;
+  kid?: string;
+  jti?: string;
+  /** fail the next call: discovery, token endpoint or JWKS fetch */
+  throw?: "dependency" | "discovery" | "jwks";
+}
+
+/**
+ * Local OIDC provider double. `next(knobs)` applies to the NEXT exchangeCode only. The nonce is read from the attempt
+ * (looked up by code_verifier) unless overridden. Every call is recorded in `calls`.
+ */
+export class FakeWorldAuth implements WorldAuthClient {
+  readonly mode = "test" as const;
+  calls: { kind: "discovery" | "exchangeCode" | "getKeys"; code?: string; codeVerifier?: string }[] = [];
+  private knobs: FakeIdTokenKnobs = {};
+  private sub = "world-sub-1";
+  private keys?: Promise<{ publicKey: CryptoKey; privateKey: CryptoKey }>;
+  private kp() {
+    return (this.keys ??= generateKeyPair("RS256") as Promise<{ publicKey: CryptoKey; privateKey: CryptoKey }>);
+  }
+  /** Default subject for tokens that do not set `sub`. */
+  setSub(sub: string) {
+    this.sub = sub;
+  }
+  next(k: FakeIdTokenKnobs) {
+    this.knobs = k;
+    return this;
+  }
+  reset() {
+    this.calls = [];
+    this.knobs = {};
+    this.sub = "world-sub-1";
+  }
+  count(kind: "discovery" | "exchangeCode" | "getKeys") {
+    return this.calls.filter((c) => c.kind === kind).length;
+  }
+  async discovery(): Promise<WorldAuthDiscovery> {
+    this.calls.push({ kind: "discovery" });
+    if (this.knobs.throw === "discovery") throw new StepUpError("DEPENDENCY", "World auth discovery unreachable");
+    return {
+      issuer: FAKE_WORLD_AUTH.issuer,
+      authorization_endpoint: `${FAKE_WORLD_AUTH.issuer}/authorize`,
+      token_endpoint: `${FAKE_WORLD_AUTH.issuer}/token`,
+      jwks_uri: `${FAKE_WORLD_AUTH.issuer}/jwks`,
+    };
+  }
+  async getKeys() {
+    this.calls.push({ kind: "getKeys" });
+    if (this.knobs.throw === "jwks") throw new StepUpError("DEPENDENCY", "JWKS unreachable");
+    return (await this.kp()).publicKey;
+  }
+  async exchangeCode(p: { code: string; codeVerifier: string; redirectUri: string }): Promise<{ id_token: string }> {
+    this.calls.push({ kind: "exchangeCode", code: p.code, codeVerifier: p.codeVerifier });
+    const k = this.knobs;
+    this.knobs = {};
+    if (k.throw === "dependency") throw new StepUpError("DEPENDENCY", "World auth token endpoint unreachable");
+    if (k.throw === "jwks") this.knobs = { throw: "jwks" };
+    const { db } = await import("@/lib/db");
+    const attempt = await db.stepUpAttempt.findFirst({ where: { codeVerifier: p.codeVerifier } });
+    const now = Math.floor(Date.now() / 1000);
+    const jwt = new SignJWT({
+      nonce: k.nonce ?? attempt?.nonce,
+      acr: k.acr ?? "https://world.org/oidc/acr/orb",
+      amr: k.amr ?? ["orb"],
+      auth_time: k.authTime ?? now,
+      ...(k.jti ? { jti: k.jti } : {}),
+    })
+      .setProtectedHeader({ alg: "RS256", kid: k.kid ?? "fake-key-1" })
+      .setIssuer(k.iss ?? FAKE_WORLD_AUTH.issuer)
+      .setAudience(k.aud ?? FAKE_WORLD_AUTH.clientId)
+      .setSubject(k.sub ?? this.sub)
+      .setIssuedAt(now)
+      .setExpirationTime(k.exp ?? now + 300);
+    return { id_token: await jwt.sign((await this.kp()).privateKey) };
+  }
+}
+
 /* ---------------- Video ---------------- */
 export const PLACEHOLDER_MP4 = new Uint8Array([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d, 0, 0, 2, 0, 0x69, 0x73, 0x6f, 0x6d, 0x6d, 0x70, 0x34, 0x31, 0, 0, 0, 8, 0x66, 0x72, 0x65, 0x65]);
 
@@ -169,6 +262,11 @@ export function installChainDouble(reader: Partial<EscrowReader> = {}) {
 }
 
 export function installDoubles() {
+  process.env.WORLD_AUTH_CLIENT_ID = FAKE_WORLD_AUTH.clientId;
+  process.env.WORLD_AUTH_CLIENT_SECRET = FAKE_WORLD_AUTH.clientSecret;
+  process.env.WORLD_AUTH_REDIRECT_URI = FAKE_WORLD_AUTH.redirectUri;
+  process.env.WORLD_AUTH_ISSUER = FAKE_WORLD_AUTH.issuer;
+  setOverride("worldAuth", new FakeWorldAuth());
   setOverride("llm", new HeuristicLlm());
   setOverride("youtube", new FakePlatform("YOUTUBE", ytParse));
   setOverride("x", new FakePlatform("X", parseXPostId));
@@ -179,6 +277,7 @@ export function installDoubles() {
 }
 
 export function clearDoubles() {
-  for (const k of ["llm", "youtube", "x", "instagram", "worldId", "videoGenerator", "escrowReader", "chainSigner"] as const) setOverride(k, null);
+  for (const k of ["llm", "youtube", "x", "instagram", "worldId", "videoGenerator", "escrowReader", "chainSigner", "worldAuth"] as const) setOverride(k, null);
+  for (const k of ["WORLD_AUTH_CLIENT_ID", "WORLD_AUTH_CLIENT_SECRET", "WORLD_AUTH_REDIRECT_URI", "WORLD_AUTH_ISSUER"]) delete process.env[k];
   delete process.env.ESCROW_ADDRESS;
 }
