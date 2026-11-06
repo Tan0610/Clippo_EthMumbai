@@ -39,7 +39,6 @@ type StepId = "idea" | "story" | "content" | "platforms" | "pay" | "shareBy" | "
 
 function stepsFor(s: S): StepId[] {
   const out: StepId[] = ["idea", "story", "content", "platforms", "pay"];
-  if (s.pay === "pool_share") out.push("shareBy");
   if (s.pay === "human_split") out.push("approver");
   out.push("size", "access", "review");
   return out;
@@ -256,7 +255,7 @@ export function Wizard() {
             <div className="tickets" role="radiogroup" aria-label="Payout rule">
               <Ticket type="radio" name="pay" value="per_view" idx="A" title="Per view" desc="A fixed rate per 1,000 verified views, until the pool runs out." checked={s.pay === "per_view"} onChange={() => set({ pay: "per_view", shareBy: "", approver: "" })} />
               <Ticket type="radio" name="pay" value="human_split" idx="B" title="I approve the split" desc="The agent pre-scores. You approve the final split with a fresh World ID check." checked={s.pay === "human_split"} onChange={() => set({ pay: "human_split", shareBy: "" })} />
-              <Ticket type="radio" name="pay" value="pool_share" idx="C" title="Share the whole pool" desc="Divided at the end by each creator’s share. Every dollar gets spent." checked={s.pay === "pool_share"} onChange={() => set({ pay: "pool_share", approver: "" })} />
+              <Ticket type="radio" name="pay" value="pool_share" idx="C" title="Share the whole pool" desc="Divided at the end by each creator’s share of verified views. Every dollar gets spent." checked={s.pay === "pool_share"} onChange={() => set({ pay: "pool_share", approver: "" })} />
             </div>
           )}
 

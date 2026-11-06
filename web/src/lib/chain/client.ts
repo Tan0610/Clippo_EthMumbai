@@ -238,41 +238,37 @@ interface ClaimPreviewResponse {
   releaseAt: string | null;
   retentionDays: number;
   chain: PublicChainConfig;
-  onchain: { functionName: "claim"; args: [string] } | null;
+  onchain: { functionName: "claimFor"; args: [string, string] } | null;
 }
 
 /** Claim preview (gross, creator-side fee, net, retention/freeze state) without sending anything. */
 export const previewClaim = (payoutId: string) => api<ClaimPreviewResponse>(`/payouts/${payoutId}/claim`);
 
-/** escrow.claim(id) from the creator's wallet, then server-side receipt verification. */
+/** Clippo's wallet sends the payout (the contract can only pay this creator) and pays the gas, so the creator needs no USDC for gas. */
 export async function claimPayout(payoutId: string) {
   const p = await previewClaim(payoutId);
   if (p.frozen) throw new Error(p.frozenReason ?? "This payout is frozen pending review");
   if (!p.claimable) throw new Error(p.releaseAt ? `Not claimable yet (retention window ends ${new Date(p.releaseAt).toLocaleString()})` : "Nothing claimable right now");
-  const cfg = p.chain;
-  if (!cfg.enabled || !cfg.escrow || !p.onchain) throw new Error("The escrow chain is not configured on this deployment");
-  const { address, wallet } = await connectWallet(cfg);
-  const txHash = await wallet.writeContract({
-    account: address,
-    chain: chainFor(cfg),
-    address: cfg.escrow,
-    abi: escrowAbi,
-    functionName: "claim",
-    args: [BigInt(p.onchain.args[0])],
-  });
-  await readClient(cfg).waitForTransactionReceipt({ hash: txHash });
-  const res = await api<{ payout: unknown; verified: boolean }>(`/payouts/${payoutId}/claim`, { json: { txHash } });
-  return { txHash, preview: p.preview, ...res };
+  const res = await api<{ payout: unknown; verified: boolean; txHash: string }>(`/payouts/${payoutId}/claim`, { json: {} });
+  return { preview: p.preview, ...res };
 }
 
-/** Admin: on-chain approve (pass the attestation from POST /campaigns/:id/attest for high-value campaigns), then verify via the API. */
-export async function approveCampaignOnchain(campaignId: string, onchainId: string, attestation?: `0x${string}`) {
+/** Signed World ID approval from the backend; the contract verifies it. */
+export interface HumanProof {
+  human: `0x${string}`;
+  expiresAt: string;
+  signature: `0x${string}`;
+}
+export const chainProof = (p: HumanProof) => ({ human: p.human, expiresAt: BigInt(p.expiresAt), signature: p.signature });
+
+/** Admin: on-chain approve (pass the proof from POST /campaigns/:id/attest for high-value campaigns), then verify via the API. */
+export async function approveCampaignOnchain(campaignId: string, onchainId: string, proof?: HumanProof) {
   const { chain: cfg } = await getChainConfig();
   if (!cfg.enabled || !cfg.escrow) throw new Error("The escrow chain is not configured on this deployment");
   const { address, wallet } = await connectWallet(cfg);
   const common = { account: address, chain: chainFor(cfg), address: cfg.escrow, abi: escrowAbi } as const;
-  const txHash = attestation
-    ? await wallet.writeContract({ ...common, functionName: "approveCampaign", args: [BigInt(onchainId), attestation] })
+  const txHash = proof
+    ? await wallet.writeContract({ ...common, functionName: "approveCampaign", args: [BigInt(onchainId), chainProof(proof)] })
     : await wallet.writeContract({ ...common, functionName: "approveCampaign", args: [BigInt(onchainId)] });
   await readClient(cfg).waitForTransactionReceipt({ hash: txHash });
   return { txHash, ...(await api<object>(`/campaigns/${campaignId}/approve`, { json: { txHash } })) };
@@ -300,7 +296,7 @@ export async function closeCampaignOnchain(campaignId: string, onchainId: string
 
 /**
  * Split approval for ONE approver: POST /split (fresh World ID proof; returns the attestation + canonical on-chain args), then
- * `approveSplit(id, creators, amounts, attestation)` from that approver's wallet. The second approver (CAMPAIGNER_AND_ADMIN)
+ * `approveSplit(id, creators, amounts, proof)` from that approver's wallet (the contract verifies the proof). The second approver (CAMPAIGNER_AND_ADMIN)
  * repeats this with their own proof and the identical split.
  */
 export async function approveSplit(
@@ -312,7 +308,7 @@ export async function approveSplit(
   const r = await api<{
     proposal: { id: string; status: string; splitHash: string; approvals: { campaigner: boolean; admin: boolean }; awaiting: string[] };
     attestation: `0x${string}`;
-    onchain: { functionName: "approveSplit"; args: { id: string; creators: `0x${string}`[]; amounts: string[]; attestation: `0x${string}` } } | null;
+    onchain: { functionName: "approveSplit"; args: { id: string; creators: `0x${string}`[]; amounts: string[]; proof: HumanProof } } | null;
   }>(`/campaigns/${campaignId}/split`, { json: { splits, worldIdProof, ...(agentProposalId ? { agentProposalId } : {}) } });
   if (!r.onchain) return { ...r, txHash: null };
   const { chain: cfg } = await getChainConfig();
@@ -325,8 +321,49 @@ export async function approveSplit(
     address: cfg.escrow,
     abi: escrowAbi,
     functionName: "approveSplit",
-    args: [BigInt(a.id), a.creators, a.amounts.map((x) => BigInt(x)), a.attestation],
+    args: [BigInt(a.id), a.creators, a.amounts.map((x) => BigInt(x)), chainProof(a.proof)],
   });
   await readClient(cfg).waitForTransactionReceipt({ hash: txHash });
+  await reportTx(txHash); // credits show at once, without waiting for the periodic sync
   return { ...r, txHash };
+}
+
+/** Tell the backend about a tx we just sent. It reads the receipt from the chain itself. A failure only delays the UI until the next sync. */
+async function reportTx(txHash: string) {
+  await api(`/chain/report`, { json: { txHash } }).catch((e) => console.warn("chain report failed; the next sync will catch up", e));
+}
+
+export interface ChainDispute {
+  payoutId: string;
+  campaignId: string;
+  title: string;
+  onchainId: string;
+  creatorWallet: `0x${string}`;
+  amount: number;
+  releaseAt: string | null;
+  open: boolean;
+  resolveBy: string | null;
+}
+export const listChainDisputes = () => api<{ disputes: ChainDispute[] }>(`/chain/disputes`);
+
+/** Campaigner: dispute a creator's PER_VIEW credits that are still inside the retention window. */
+export async function disputeCredits(onchainId: string, creator: `0x${string}`) {
+  const { chain: cfg } = await getChainConfig();
+  if (!cfg.enabled || !cfg.escrow) throw new Error("The escrow chain is not configured on this deployment");
+  const { address, wallet } = await connectWallet(cfg);
+  const txHash = await wallet.writeContract({ account: address, chain: chainFor(cfg), address: cfg.escrow, abi: escrowAbi, functionName: "disputeCredits", args: [BigInt(onchainId), creator] });
+  await readClient(cfg).waitForTransactionReceipt({ hash: txHash });
+  await reportTx(txHash);
+  return { txHash };
+}
+
+/** Admin: settle an open dispute. Upheld credits return to the pool or the campaigner, never to the admin. */
+export async function resolveDispute(onchainId: string, creator: `0x${string}`, upheld: boolean) {
+  const { chain: cfg } = await getChainConfig();
+  if (!cfg.enabled || !cfg.escrow) throw new Error("The escrow chain is not configured on this deployment");
+  const { address, wallet } = await connectWallet(cfg);
+  const txHash = await wallet.writeContract({ account: address, chain: chainFor(cfg), address: cfg.escrow, abi: escrowAbi, functionName: "resolveDispute", args: [BigInt(onchainId), creator, upheld] });
+  await readClient(cfg).waitForTransactionReceipt({ hash: txHash });
+  await reportTx(txHash);
+  return { txHash };
 }

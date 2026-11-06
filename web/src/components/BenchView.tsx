@@ -1,4 +1,5 @@
 "use client";
+import { OnchainDisputes } from "./OnchainDisputes";
 import { useMemo, useState } from "react";
 import { actions, api, errText, type WorldProof } from "./api";
 import type { QueueItem } from "@/ui-mocks/data";
@@ -51,7 +52,7 @@ export function BenchView() {
     setBusy(i.id);
     try {
       const a = await actions.attest(i.id, proof);
-      await escrow.approve({ id: i.id, onchainId: i.onchainId }, a.attestation);
+      await escrow.approve({ id: i.id, onchainId: i.onchainId }, a.proof ?? undefined);
       setDone((x) => ({ ...x, [i.id]: "Approved and live" }));
     } catch (e) {
       setErr(worldFailText(e));
@@ -114,7 +115,7 @@ export function BenchView() {
       </div>
 
       {tab === "splits" && <AdminSplits />}
-      {tab === "disputes" && <Disputes />}
+      {tab === "disputes" && <><OnchainDisputes role="admin" /><Disputes /></>}
       {tab === "growth" && <Growth />}
       {tab !== "disputes" && tab !== "growth" && tab !== "splits" && q.status === "loading" && <Loading rows={5} label="Ranking the queue" />}
       {tab !== "disputes" && tab !== "growth" && tab !== "splits" && q.status === "error" && (

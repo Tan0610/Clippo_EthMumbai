@@ -12,6 +12,7 @@ import { Stamp } from "./Stamp";
 import { AppealPanel } from "./AppealPanel";
 import { CreatorAssistant, LinkReadiness } from "./CreatorAssistant";
 import { DealPanel } from "./DealPanel";
+import { ConfirmedViews, hasConfirmed } from "./ConfirmedViews";
 
 function ViewsChart({ daily }: { daily: number[] }) {
   if (daily.length < 2) return <p className="note"><span className="micro">Daily history</span>The chart fills in once the first daily view snapshots are saved.</p>;
@@ -22,7 +23,7 @@ function ViewsChart({ daily }: { daily: number[] }) {
   const pts = daily.map((v, i) => `${x(i)},${y(v)}`).join(" ");
   const last = daily.length - 1;
   return (
-    <svg className="chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Cumulative verified views over ${daily.length} days, ending at ${whole(daily[last])}`}>
+    <svg className="chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Cumulative views (Clippo count) over ${daily.length} days, ending at ${whole(daily[last])}`}>
       {[0, 0.5, 1].map((t) => (
         <g key={t}>
           <line className="ax" x1={P} x2={W - P} y1={y(max * t)} y2={y(max * t)} />
@@ -67,7 +68,16 @@ function useReferral(campaignId: string) {
   return code;
 }
 
-function SubmissionRow({ s, onAppeal }: { s: Submission; onAppeal: (id: string) => void }) {
+/** The signed-in creator's own confirmed views for this campaign (from their earnings), with the proof link. Renders nothing if it cannot load. */
+function MyConfirmed({ id }: { id: string }) {
+  const q = useAsync(api.earnings);
+  if (q.status !== "ready") return null;
+  const row = q.data.estimates.find((e) => e.campaignId === id);
+  if (!row || !hasConfirmed(row.mode)) return null;
+  return <ConfirmedViews variant="line" label="Your confirmed views" confirmed={row.confirmedViews} pending={row.pendingViews} clippo={row.views} proof={row.proof} />;
+}
+
+function SubmissionRow({ s, onAppeal, cre }: { s: Submission; onAppeal: (id: string) => void; cre: boolean }) {
   return (
     <li style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: "6px 24px", padding: "18px 0", borderBottom: "1px solid var(--rule-soft)" }}>
       <div className="stack" style={{ gap: 6 }}>
@@ -85,6 +95,7 @@ function SubmissionRow({ s, onAppeal }: { s: Submission; onAppeal: (id: string) 
       <div className="stack" style={{ justifyItems: "end", alignContent: "start" }}>
         <Stamp verdict={s.verdict} conf={s.confidence || undefined} />
         <div className="fig" style={{ fontSize: "0.875rem", marginTop: 6 }}>{s.views ? `${whole(s.views)} views` : "no views yet"}</div>
+        {s.views > 0 && <span className="micro">{cre ? "Clippo count (pending)" : "Clippo count"}</span>}
         <div className="fig" style={{ fontSize: "0.875rem", color: s.earned ? "var(--ink)" : "var(--ink-3)" }}>{s.earned ? `${money(s.earned)} USDC` : "unpaid"}</div>
       </div>
     </li>
@@ -195,8 +206,9 @@ function Detail({ c }: { c: Campaign }) {
           <section aria-labelledby="perf" className="stack">
             <div className="section-title" style={{ marginBottom: 0 }}>
               <h2 id="perf">Performance</h2>
-              <span className="fig">{whole(c.views)} verified views</span>
+              <span className="fig">{whole(c.views)} views, Clippo count</span>
             </div>
+            {hasConfirmed(c.mode) && <ConfirmedViews variant="line" label="Confirmed views, all creators" confirmed={c.confirmedViews} pending={c.pendingViews} clippo={c.views} proof={c.proof} explain />}
             <DailyViews id={c.id} />
             <div className="stack" style={{ gap: 6 }}>
               <div className="row-between"><span className="micro">Payout progress</span><span className="fig" style={{ fontSize: "0.875rem" }}>{Math.round(pct)}% of pool allocated</span></div>
@@ -240,6 +252,7 @@ function Detail({ c }: { c: Campaign }) {
             ) : (
               <>
                 {refNote && <p className="notice" role="status">{refNote}</p>}
+                {s.role === "creator" && hasConfirmed(c.mode) && <MyConfirmed id={c.id} />}
                 <form className="stack" onSubmit={submit} noValidate>
                   <div className={`field${err ? " bad" : ""}`}>
                     <label htmlFor="url">Clip link</label>
@@ -257,7 +270,7 @@ function Detail({ c }: { c: Campaign }) {
                 {subs.status === "loading" && <Loading label="Pulling your clips" rows={3} />}
                 {subs.status === "error" && <Correction what="Your clips did not load." cause={subs.error} onRetry={subs.retry} />}
                 {subs.status === "ready" && all.length === 0 && <Empty title="No clips yet.">Paste a link above. The verdict lands here with its reason.</Empty>}
-                {all.length > 0 && <ul aria-live="polite">{all.map((x) => <SubmissionRow key={x.id} s={x} onAppeal={(id) => setAppealed((a) => [...a, id])} />)}</ul>}
+                {all.length > 0 && <ul aria-live="polite">{all.map((x) => <SubmissionRow key={x.id} s={x} cre={hasConfirmed(c.mode)} onAppeal={(id) => setAppealed((a) => [...a, id])} />)}</ul>}
               </>
             )}
           </section>

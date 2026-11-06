@@ -1,6 +1,8 @@
 {
   "schedule": "0 30 0 * * *",
   "backendUrl": "http://127.0.0.1:8787",
+  "manifestPath": "/api/snapshots/clips",
+  "youtubeApiBase": "http://127.0.0.1:8787/youtube/v3",
   "feedPath": "/api/snapshots/daily",
   "maxStalenessDays": 2,
   "maxRowsPerReport": 25,

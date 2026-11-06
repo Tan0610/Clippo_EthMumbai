@@ -15,6 +15,7 @@ contract DeployTest is Test {
         vm.setEnv("ADMIN_ADDRESS", vm.toString(admin));
         vm.setEnv("FORWARDER_ADDRESS", vm.toString(fwd));
         vm.setEnv("UPDATER_ADDRESS", vm.toString(upd));
+        vm.setEnv("HUMAN_ATTESTOR_ADDRESS", vm.toString(makeAddr("attestor")));
         vm.setEnv("EXPECTED_WORKFLOW_OWNER", vm.toString(wfOwner));
         vm.setEnv("EXPECTED_WORKFLOW_ID", vm.toString(bytes32(uint256(0xabc))));
         vm.setEnv("EXPECTED_WORKFLOW_NAME", "0x62373666336165316465");
@@ -48,6 +49,8 @@ contract DeployTest is Test {
         assertEq(d.escrow().treasury(), admin);
         assertEq(d.escrow().campaignerFeeBps(), 25);
         assertEq(d.escrow().retentionPeriod(), 7 days);
+        assertEq(d.escrow().gracePeriod(), 1 days);
+        assertEq(d.escrow().humanAttestor(), makeAddr("attestor"));
         assertEq(d.escrow().highValueThreshold(), 1_000e6);
         assertEq(d.deployBlock(), block.number);
 

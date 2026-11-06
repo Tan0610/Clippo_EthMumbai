@@ -5,7 +5,25 @@ export type PayMode = "per_view" | "human_split" | "pool_share";
 export type Verdict = "approved" | "rejected" | "needs_human" | "pending";
 export type CampaignStatus = "draft" | "awaiting_funds" | "pending_admin" | "live" | "closed" | "rejected";
 
-export type Campaign = {
+/* Chainlink CRE: views read from YouTube by CRE nodes and written on Arc ("confirmed", this is what is paid) versus Clippo's own
+   count ("pending"). Frozen contract: docs/CRE_SCOPE.md section 2. Every field is optional because an older backend omits them. */
+export type Proof = { txHash: string; blockNumber: number; reportedAt: string; explorerUrl: string } | null;
+export type ConfirmedFields = { confirmedViews?: number; pendingViews?: number; proof?: Proof };
+
+/** DEMO ONLY. Sample confirmed/pending split for the offline demo store. The proof is a placeholder, not a real transaction. */
+export const DEMO_PROOF: NonNullable<Proof> = {
+  txHash: "demo-not-a-real-transaction",
+  blockNumber: 0,
+  reportedAt: "2026-10-27T00:00:00.000Z",
+  explorerUrl: "https://example.com/demo-proof",
+};
+export const demoConfirmed = (views: number, mode: PayMode): ConfirmedFields => {
+  if (mode === "human_split") return {};
+  const confirmedViews = Math.floor(views * 0.78);
+  return { confirmedViews, pendingViews: Math.max(0, views - confirmedViews), proof: confirmedViews > 0 ? DEMO_PROOF : null };
+};
+
+export type Campaign = ConfirmedFields & {
   id: string;
   serial: string;
   title: string;
@@ -79,7 +97,7 @@ export type Payout = {
   releaseAt?: string | null; // retention window end
 };
 
-export type Estimate = {
+export type Estimate = ConfirmedFields & {
   campaignId: string;
   title: string;
   mode: PayMode;
@@ -328,7 +346,7 @@ export const earnings: EarningsData = {
     { id: "e-5", campaignId: "c-hexbolt", campaign: "Hexbolt", day: "Oct 23", amount: 20.79, claimed: true, tx: "0x9be2…17d4" },
   ],
   estimates: [
-    { campaignId: "c-ledgerlane", title: "Ledgerlane: explain the 3-minute close", mode: "per_view", approvedClips: 3, views: 61200, est: 146.88 },
+    { campaignId: "c-ledgerlane", title: "Ledgerlane: explain the 3-minute close", mode: "per_view", approvedClips: 3, views: 61200, est: 146.88, ...demoConfirmed(61200, "per_view") },
     { campaignId: "c-fieldnotes", title: "Fieldnotes: why we stopped using slides", mode: "human_split", approvedClips: 1, views: 8400, est: null },
   ],
   totals: { estimated: 146.88, claimable: 86.8, claimed: 43.11 },

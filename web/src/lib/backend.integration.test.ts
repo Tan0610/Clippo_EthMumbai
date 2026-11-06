@@ -90,10 +90,9 @@ describe("snapshot feed <-> CRE contract (shared fixture cre/workflows/clippo-se
     expect(feed).toEqual([
       { campaignId: "7", creator: W.c1, cumulativeViews: 2000 },
       { campaignId: "7", creator: W.c2, cumulativeViews: 800 },
-      { campaignId: "12", creator: W.c2, cumulativeViews: 5000 },
-    ]);
+    ]); // campaign 12 is HUMAN_SPLIT: its money moves on human approval, so CRE never reports it
     const rows = JSON.parse(normalizeSnapshot(feed)) as { campaignId: string }[];
-    expect(rows).toHaveLength(3); // nothing dropped by the CRE side
+    expect(rows).toHaveLength(2); // nothing dropped by the CRE side
   });
 
   it("the shared fixture normalises to the canonical string on the web side too", () => {

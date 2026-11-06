@@ -1,0 +1,40 @@
+# REAL YouTube read through the CRE workflow, delivered on a LOCAL anvil fork of Arc testnet (nothing on real Arc).
+# Captured 2026-11-07 with scripts/simulate-real-youtube.sh. Channel @visualsbyanii (UCIZw3qclbEDMa4TCFMAatww), video vWk4YV_dbsE, creator wallet 0x8cf9113b19aa9d169365ca7b1bb9d7b957b460e5.
+# Manifest: one clip served by the local mock backend. YouTube: the REAL Data API v3 (key from cre/.env, sent in a header, never printed). Chain: local fork, fresh contracts, simulation forwarder.
+# The CRE simulator runs ONE node: no multi-node consensus was exercised.
+
+# manifest served to the workflow (one real clip):
+[{"campaignId":"7","creator":"0x8cf9113b19aa9d169365ca7b1bb9d7b957b460e5","videoId":"vWk4YV_dbsE","channelId":"UCIZw3qclbEDMa4TCFMAatww"}]
+# cre workflow simulate ./workflows/clippo-settlement --target staging-settings --config <staging config with youtubeApiBase = real YouTube> --trigger-index 0 --broadcast (local anvil fork of Arc)
+Initializing...
+Loading settings...
+Checking RPC connectivity...
+Compiling workflow...
+✓ Workflow compiled
+✓ Simulation limits enabled
+  HTTP: req=120kb resp=250kb timeout=10s | ConfHTTP: req=125kb resp=500kb timeout=1m30s | Consensus obs=25kb | ChainWrite evm_report=50kb evm_gas=10000000 solana_report=265b solana_cu=300000 | WASM binary=100mb compressed=20mb
+  Binary hash: aa86893d41c523ac19448412db348dd6eff4036b618a30e3e7fc0fde60bef859
+  Config hash: b8a92b927189aaa8862cab700c83b2e23248548619bf043f1e45edec7afb1ee6
+2026-11-07T02:42:00Z [SIMULATION] Simulator Initialized
+
+2026-11-07T02:42:00Z [SIMULATION] Running trigger trigger=cron-trigger@1.0.0
+2026-11-07T02:42:01Z [USER LOG] manifest agreed: day=2026-11-05 hash=0x6756ff53c6e6603b581d13211e63996cd008c217094723d8f38068a2dbc4124c
+2026-11-07T02:42:01Z [USER LOG] manifest clips: 1
+2026-11-07T02:42:01Z [USER LOG] youtube agreed: kept 1/1 clips, 1 creator rows
+2026-11-07T02:42:02Z [USER LOG] batch 1/1: 1 rows, tx 0x4f3378fa2ff2963e8cee0dd9479ec2e2d22cd465980ccff0f9185d74a5c031e9
+2026-11-07T02:42:02Z [USER LOG] batch 1/1: receiver processed 1 rows, 0 failed
+
+✓ Workflow Simulation Result:
+"delivered day=2026-11-05 rows=1 reports=1 failedRows=0 unconfirmedBatches=0 txs=0x4f3378fa2ff2963e8cee0dd9479ec2e2d22cd465980ccff0f9185d74a5c031e9"
+
+2026-11-07T02:42:02Z [SIMULATION] Execution finished signal received
+2026-11-07T02:42:02Z [SIMULATION] Skipping WorkflowEngineV2
+
+╭──────────────────────────────────────────────────────╮
+│ Simulation complete! Ready to deploy your workflow?  │
+│                                                      │
+│ Run cre account access to request deployment access. │
+╰──────────────────────────────────────────────────────╯
+# on-chain check (local fork): reportedViews and credited for campaign 7, creator 0x8cf9113b19aa9d169365ca7b1bb9d7b957b460e5
+reportedViews=3  credited(USDC units, 6 decimals)=30000 [3e4]
+scripts/simulate-real-youtube.sh: line 25:  3978 Terminated: 15          node scripts/mock-backend.mjs --mode realyt --real-wallet "$WALLET" --real-video "$VIDEO" --real-channel "$CHANNEL" --real-campaign "$CAMPAIGN" > /dev/null

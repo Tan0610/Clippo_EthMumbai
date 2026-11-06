@@ -6,6 +6,7 @@ import { Correction, Empty, Loading } from "./Bits";
 import { compact, money, whole } from "./format";
 import { TierMark } from "./Marks";
 import { VerifiedMark } from "./Icons";
+import { ConfirmedNote, ConfirmedViews, hasConfirmed } from "./ConfirmedViews";
 import "./market.css";
 
 const VD = { approved: ["ok", "Approved"], rejected: ["no", "Rejected"], needs_human: ["hold", "Needs human"], pending: ["pending", "Pending"] } as const;
@@ -15,7 +16,11 @@ export function CreatorHead() {
   const d = useAsync(mk.creatorDash);
   if (d.status === "loading") return <Loading label="Reading your record" rows={3} />;
   if (d.status === "error") return null;
-  const { rank, totals, verified } = d.data;
+  const { rank, totals, verified, campaigns } = d.data;
+  /* CRE reports views for PER_VIEW and POOL_SHARE only. A creator with nothing but HUMAN_SPLIT campaigns has no Confirmed number. */
+  const creCampaigns = campaigns.filter((c) => hasConfirmed(c.mode));
+  const cre = creCampaigns.length > 0;
+  const creClippo = creCampaigns.reduce((a, c) => a + c.views, 0);
   return (
     <section className="stack" aria-labelledby="rec" style={{ marginBottom: 48 }}>
       <div className="section-title" style={{ marginBottom: 0 }}>
@@ -26,11 +31,16 @@ export function CreatorHead() {
         </span>
       </div>
       <dl className="stats">
-        <div><dt className="micro">Verified views</dt><dd className="fig">{compact(totals.views)}</dd></div>
+        {cre ? (
+          <ConfirmedViews variant="stat" confirmed={totals.confirmedViews} pending={totals.pendingViews} clippo={creClippo} />
+        ) : (
+          <div><dt className="micro">Views, Clippo count</dt><dd className="fig">{compact(totals.views)}</dd></div>
+        )}
         <div><dt className="micro">Clips sent</dt><dd className="fig">{whole(totals.submitted)}</dd></div>
         <div><dt className="micro">Approved / rejected</dt><dd className="fig">{totals.approved}<small>/</small>{totals.rejected}</dd></div>
         <div><dt className="micro">Reliability</dt><dd className="fig">{Math.round(rank.reliability * 100)}<small>%</small></dd></div>
       </dl>
+      {cre && <ConfirmedNote />}
       <div className="owed" role="group" aria-label="Owed and claimed">
         <div><span className="micro">Owed, claimable now</span><span className="fig">${money(totals.claimable)}</span></div>
         <div><span className="micro">Claimed</span><span className="fig">${money(totals.claimed)}</span></div>
@@ -53,7 +63,7 @@ export function MySubmissions() {
         <div className="ledger-wrap">
           <table className="ledger reflow">
             <caption className="sr">Submitted clips and verdicts</caption>
-            <thead><tr><th scope="col">Clip</th><th scope="col">Verdict</th><th scope="col" className="n">Conf.</th><th scope="col" className="n">Views</th></tr></thead>
+            <thead><tr><th scope="col">Clip</th><th scope="col">Verdict</th><th scope="col" className="n">Conf.</th><th scope="col" className="n">Clippo count</th></tr></thead>
             <tbody>
               {s.data.map((x) => {
                 const [k, label] = VD[x.verdict];
@@ -66,7 +76,7 @@ export function MySubmissions() {
                     </td>
                     <td data-l="Verdict"><span className={`vd ${k}`}>{label}</span>{x.appeal === "open" && <span className="micro" style={{ display: "block", marginTop: 4 }}>Appeal open</span>}</td>
                     <td className="n" data-l="Confidence">{x.confidence ? x.confidence.toFixed(2) : "–"}</td>
-                    <td className="n" data-l="Views">{x.views ? compact(x.views) : "–"}</td>
+                    <td className="n" data-l="Clippo count">{x.views ? compact(x.views) : "–"}</td>
                   </tr>
                 );
               })}

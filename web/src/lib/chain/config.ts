@@ -9,12 +9,14 @@ import { defineChain } from "viem";
  *  USDC_ADDRESS       USDC ERC-20 (6 decimals)     (default Arc testnet USDC 0x3600...0000)
  *  ESCROW_ADDRESS     deployed ClippoEscrow        (required to enable chain mode)
  *  ESCROW_DEPLOY_BLOCK first block to index        (default 0)
+ *  EXPLORER_BASE_URL  block explorer base for tx links (default https://explorer.testnet.arc.io)
  *  PLATFORM_CAMPAIGNER_FEE_BPS / PLATFORM_CREATOR_FEE_BPS  fallback fees when the chain is unreachable (default 25 / 25)
  */
 export const USDC_DECIMALS = 6;
 const DEFAULT_RPC = "https://rpc.testnet.arc.io";
 const DEFAULT_CHAIN_ID = 5042002;
 const DEFAULT_USDC = "0x3600000000000000000000000000000000000000";
+const DEFAULT_EXPLORER = "https://explorer.testnet.arc.io";
 
 export interface ChainConfig {
   enabled: boolean;
@@ -23,6 +25,7 @@ export interface ChainConfig {
   usdc: `0x${string}`;
   escrow: `0x${string}` | null;
   deployBlock: number;
+  explorerBase: string;
 }
 
 const isAddr = (a: string | undefined): a is `0x${string}` => !!a && /^0x[0-9a-fA-F]{40}$/.test(a);
@@ -37,6 +40,7 @@ export function chainConfig(): ChainConfig {
     usdc: isAddr(usdc) ? usdc : DEFAULT_USDC,
     escrow: isAddr(escrow) ? escrow : null,
     deployBlock: Number(process.env.ESCROW_DEPLOY_BLOCK || 0),
+    explorerBase: (process.env.EXPLORER_BASE_URL || DEFAULT_EXPLORER).replace(/\/+$/, ""),
   };
 }
 
@@ -54,5 +58,5 @@ export function arcChain(cfg: ChainConfig = chainConfig()) {
 
 /** The subset safe to expose to browsers (GET /api/chain/config). */
 export function publicChainConfig(cfg: ChainConfig = chainConfig()) {
-  return { enabled: cfg.enabled, chainId: cfg.chainId, rpcUrl: cfg.rpcUrl, usdc: cfg.usdc, escrow: cfg.escrow, usdcDecimals: USDC_DECIMALS, faucetUrl: process.env.CIRCLE_FAUCET_URL || "https://faucet.circle.com" };
+  return { enabled: cfg.enabled, chainId: cfg.chainId, rpcUrl: cfg.rpcUrl, usdc: cfg.usdc, escrow: cfg.escrow, usdcDecimals: USDC_DECIMALS, explorerBase: cfg.explorerBase, faucetUrl: process.env.CIRCLE_FAUCET_URL || "https://faucet.circle.com" };
 }
