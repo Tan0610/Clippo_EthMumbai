@@ -482,8 +482,8 @@ export const actions = {
   /** Admin: fresh single-use World ID proof for approving a (high-value) FUNDED campaign. Returns the attestation to pass to approveCampaign. */
   attest: (id: string, worldIdProof: WorldProof) =>
     withFallback(
-      () => req<{ attestation: `0x${string}`; highValue: boolean; onchain: { functionName: "approveCampaign"; args: unknown[] } | null }>(`/campaigns/${id}/attest`, { json: { worldIdProof: wireProof(worldIdProof) } }),
-      () => ({ attestation: ("0x" + "0".repeat(64)) as `0x${string}`, highValue: true, onchain: null }),
+      () => req<{ attestation: `0x${string}`; proof: { human: `0x${string}`; expiresAt: string; signature: `0x${string}` } | null; highValue: boolean; onchain: { functionName: "approveCampaign"; args: unknown[] } | null }>(`/campaigns/${id}/attest`, { json: { worldIdProof: wireProof(worldIdProof) } }),
+      () => ({ attestation: ("0x" + "0".repeat(64)) as `0x${string}`, proof: null, highValue: true, onchain: null }),
     ),
   /* API-only legs: used when the escrow chain is not configured (the server then decides) or after the on-chain tx, via lib/chain/client.ts */
   approveCampaign: (id: string, txHash?: string) => withFallback(() => req(`/campaigns/${id}/approve`, { json: txHash ? { txHash } : {} }), () => pause(300)),

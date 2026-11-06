@@ -78,7 +78,9 @@ async function prefetch(name: string, a: Args, deps: IndexerDeps, blockNumber: b
   }
   if (name === "CreatorCredited") {
     p.at = await deps.blockTime(blockNumber);
-    p.retentionSeconds = (await deps.reader.retention()).retentionSeconds;
+    const row = await deps.reader.getCampaign(a.campaignId).catch(() => null);
+    // retention is fixed per campaign; test doubles without it fall back to the global value
+    p.retentionSeconds = row?.retention != null ? Number(row.retention) : (await deps.reader.retention()).retentionSeconds;
   }
   if (name === "Claimed") p.at = await deps.blockTime(blockNumber);
   return p;
@@ -178,6 +180,18 @@ async function apply(tx: Tx, name: string, a: Args, log: IndexedLog, pre: Prefet
       }
       return { event: name, applied: true };
     }
+    case "DisputeResolved": {
+      // an upheld dispute removes the credits on-chain, so the payout shrinks to match
+      const amount = fromUnits(a.amount);
+      if (!a.upheld || amount <= 0) return { event: name, applied: false, reason: "dispute not upheld" };
+      const c = await byOnchainId(tx, a.campaignId);
+      const u = await tx.user.findUnique({ where: { wallet: lower(a.creator) } });
+      if (!c || !u) return { event: name, applied: false, reason: "unknown campaign or creator" };
+      const row = await tx.payout.findFirst({ where: { campaignId: c.id, creatorId: u.id }, orderBy: { createdAt: "asc" } });
+      if (!row) return { event: name, applied: false, reason: "no payout" };
+      await tx.payout.update({ where: { id: row.id }, data: { amount: Math.max(row.claimedAmount, row.amount - amount) } });
+      return { event: name, applied: true };
+    }
     case "SplitFinalized": {
       const c = await byOnchainId(tx, a.campaignId);
       if (!c) return { event: name, applied: false, reason: "unknown campaign" };
@@ -259,13 +273,16 @@ export async function processReceipt(txHash: string, deps: IndexerDeps = liveDep
   const logs = decodeEscrowLogs(receipt.logs);
   // A Claimed event is applied against payouts built from earlier CreatorCredited events. If the periodic sync lags, applying the
   // claim first would drop the part not yet credited in the DB (and the later credit would then show as unclaimed). Catch up first.
-  if (logs.some((l) => l.eventName === "Claimed")) await syncChain({}, deps);
+  // The money has already moved at this point, so a slow or rate-limited RPC must not turn it into an error.
+  if (logs.some((l) => l.eventName === "Claimed")) {
+    await syncChain({ maxBlocks: 25_000 }, deps).catch((e) => console.warn("[indexer] catch-up before claim failed", e));
+  }
   const outcomes = await processLogs(logs, deps);
   return { receipt, logs, outcomes };
 }
 
 const CURSOR = "escrow";
-const CHUNK = 2000n;
+const CHUNK = 5000n; // Arc's public RPC refuses ranges of 10,000 blocks
 
 /** Pull new escrow logs since the cursor and apply them. Safe to call repeatedly (cron / admin). */
 export async function syncChain(opts: { maxBlocks?: number } = {}, deps: IndexerDeps = liveDeps()) {

@@ -59,7 +59,6 @@ describe("PRD 4.3 wizard: every option of every question is accepted and persist
       { contentSource: "LINK", platforms: ["X"], payoutMode: "HUMAN_SPLIT", approver: "CAMPAIGNER_ONLY", eligibility: "HIGHER_RANKED" },
       { contentSource: "AI_GENERATED", platforms: ["INSTAGRAM"], payoutMode: "HUMAN_SPLIT", approver: "CAMPAIGNER_AND_ADMIN", eligibility: "ANYONE_VERIFIED" },
       { contentSource: "LINK", platforms: ["YOUTUBE", "X", "INSTAGRAM"], payoutMode: "POOL_SHARE", poolShareBasis: "VIEWS", eligibility: "ANYONE_VERIFIED" },
-      { contentSource: "LINK", platforms: ["YOUTUBE", "X"], payoutMode: "POOL_SHARE", poolShareBasis: "APPROVED_CLIPS", eligibility: "HIGHER_RANKED" },
     ] as const;
     for (const c of combos) {
       const s = await j(await suggest(req("/api/wizard/suggest", W.camp, { idea: "Promote Ledgerlane, an accounting close tool", ...c })));
@@ -80,10 +79,10 @@ describe("PRD 4.3 wizard: every option of every question is accepted and persist
     expect((await j(await list(req("/api/campaigns?mine=true", W.camp)))).body.campaigns).toHaveLength(combos.length);
   });
 
-  it("rejects an incomplete answer set: pool share needs a basis, approved split needs an approver, per view needs a rate", async () => {
+  it("rejects an incomplete answer set: pool share is by views only, approved split needs an approver, per view needs a rate", async () => {
     const { POST: create } = await import("@/app/api/campaigns/route");
     const base = { title: "T", story, contentSource: "LINK", platforms: ["YOUTUBE"], poolSize: 100 };
-    for (const bad of [{ payoutMode: "POOL_SHARE" }, { payoutMode: "HUMAN_SPLIT" }, { payoutMode: "PER_VIEW" }, { payoutMode: "PER_VIEW", ratePer1k: 1, platforms: [] }]) {
+    for (const bad of [{ payoutMode: "POOL_SHARE", poolShareBasis: "APPROVED_CLIPS" }, { payoutMode: "HUMAN_SPLIT" }, { payoutMode: "PER_VIEW" }, { payoutMode: "PER_VIEW", ratePer1k: 1, platforms: [] }]) {
       expect((await j(await create(req("/api/campaigns", W.camp, { ...base, ...bad })))).status).toBe(400);
     }
     expect((await j(await create(req("/api/campaigns", W.cre1, { ...base, payoutMode: "PER_VIEW", ratePer1k: 1 })))).status).toBe(403); // creators cannot create campaigns
@@ -263,38 +262,6 @@ describe("PRD 4.2 verification agent: disclosure label and prohibited claims are
     expect(noCredit.flags).toContain("attribution_missing");
     const credited = await verifyClip({ ...input("#ad Ledgerlane closes the books, credit @ledgerlane"), story: needsCredit }, approver);
     expect(credited.result).toBe("APPROVE");
-  });
-});
-
-describe("PRD 4.4 pool share: weights by verified views or by approved clips, as chosen", () => {
-  it("GET /api/campaigns/:id/pool-share returns pro-rata weights and the setWeights arguments", async () => {
-    const camp = await db.user.findUniqueOrThrow({ where: { wallet: W.camp } });
-    const [u1, u2] = await Promise.all([db.user.findUniqueOrThrow({ where: { wallet: W.cre1 } }), db.user.findUniqueOrThrow({ where: { wallet: W.cre2 } })]);
-    const day = new Date().toISOString().slice(0, 10);
-    const mkCampaign = (basis: "VIEWS" | "APPROVED_CLIPS", onchainId: string) =>
-      db.campaign.create({ data: { campaignerId: camp.id, title: basis, story, contentSource: "LINK", platforms: ["YOUTUBE"], payoutMode: "POOL_SHARE", poolShareBasis: basis, poolSize: 1000, status: "APPROVED", onchainId } });
-    const views = await mkCampaign("VIEWS", "51");
-    const clips = await mkCampaign("APPROVED_CLIPS", "52");
-    for (const c of [views, clips]) {
-      const spec: [typeof u1, string, number, "APPROVE" | "REJECT"][] = [[u1, "a", 9000, "APPROVE"], [u1, "b", 1000, "APPROVE"], [u2, "c", 10000, "APPROVE"], [u2, "d", 50000, "REJECT"]];
-      for (const [u, vid, v, res] of spec) {
-        const ch = (await db.channel.findFirst({ where: { userId: u.id } })) ?? (await db.channel.create({ data: { userId: u.id, platform: "YOUTUBE", handle: `ps-${u.id.slice(-4)}`, verificationCode: "x", verified: true } }));
-        const s = await db.submission.create({ data: { campaignId: c.id, creatorId: u.id, channelId: ch.id, link: `https://youtu.be/${c.title}${vid}`, videoId: `${c.title}${vid}`, metadata: {}, verdict: { create: { result: res, confidence: 0.9, reason: "r" } } } });
-        await db.viewSnapshot.create({ data: { campaignId: c.id, submissionId: s.id, creatorId: u.id, day, cumulativeViews: v } });
-      }
-    }
-    const { GET } = await import("@/app/api/campaigns/[id]/pool-share/route");
-    const byViews = (await j(await GET(req(`/api/campaigns/${views.id}/pool-share`, W.camp), ctx(views.id)))).body;
-    expect(byViews.basis).toBe("VIEWS");
-    expect(Object.fromEntries(byViews.weights.map((w: { creatorWallet: string; weight: number }) => [w.creatorWallet, w.weight]))).toEqual({ [W.cre1]: 10000, [W.cre2]: 10000 }); // rejected clip's views never count
-    expect(byViews.onchain).toEqual({ functionName: "setWeights", args: { id: "51", creators: [W.cre1, W.cre2], weights: ["10000", "10000"] } });
-    const byClips = (await j(await GET(req(`/api/campaigns/${clips.id}/pool-share`, W.adm), ctx(clips.id)))).body;
-    expect(byClips.basis).toBe("APPROVED_CLIPS");
-    expect(Object.fromEntries(byClips.weights.map((w: { creatorWallet: string; weight: number }) => [w.creatorWallet, w.weight]))).toEqual({ [W.cre1]: 2, [W.cre2]: 1 });
-    expect(byClips.weights.reduce((n: number, w: { share: number }) => n + w.share, 0)).toBeCloseTo(1);
-    expect((await j(await GET(req(`/api/campaigns/${views.id}/pool-share`, W.cre1), ctx(views.id)))).status).toBe(403);
-    const pv = await db.campaign.findFirstOrThrow({ where: { payoutMode: "PER_VIEW" } });
-    expect((await j(await GET(req(`/api/campaigns/${pv.id}/pool-share`, W.camp), ctx(pv.id)))).status).toBe(409);
   });
 });
 

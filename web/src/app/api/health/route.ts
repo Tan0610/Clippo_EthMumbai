@@ -40,6 +40,7 @@ export const GET = route(async () => {
     cronSecret: (process.env.CRON_SECRET?.length ?? 0) >= 16,
     adminWallets: has("ADMIN_WALLETS"),
     escrow: chainConfig().enabled,
+    clippoWallet: has("HUMAN_ATTESTOR_PRIVATE_KEY"),
     llm,
     worldId: has("WORLD_ID_APP_ID") && has("WORLD_ID_RP_ID") && has("WORLD_ID_SIGNING_KEY"),
     youtube: has("YOUTUBE_API_KEY"),

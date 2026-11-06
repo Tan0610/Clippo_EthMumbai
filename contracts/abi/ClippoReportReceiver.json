@@ -32,6 +32,19 @@
   },
   {
     "type": "function",
+    "name": "configLocked",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "escrow",
     "inputs": [],
     "outputs": [
@@ -94,6 +107,13 @@
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "lockConfig",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -242,6 +262,12 @@
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "event",
+    "name": "ConfigLocked",
+    "inputs": [],
+    "anonymous": false
   },
   {
     "type": "event",
@@ -396,6 +422,16 @@
   },
   {
     "type": "error",
+    "name": "CannotLockWhileSkipping",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ConfigIsLocked",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidWorkflowId",
     "inputs": [
       {
@@ -445,6 +481,11 @@
   {
     "type": "error",
     "name": "NotForwarder",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotSimulationOperator",
     "inputs": []
   },
   {
