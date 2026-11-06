@@ -45,7 +45,13 @@ Track status at the start:
 
 ## Log
 
-### 19. Vercel steps and a seed script for the deployed database, commit pending
+### 20. Deployed to Vercel (new project) and the site shows the real CRE result, commit pending
+
+- **What:** the owner gave access to run the Vercel steps. The old `clippo-six` project is not in the owner's account, so a new project `clippo-cre` was created in `aniruddha1295s-projects`: https://clippo-cre.vercel.app. Neon database `clippo-cre-db` provisioned through the Vercel integration (owner accepted the terms), all migrations applied, 7 production variables set, production deploy ready (a local build passed first), seed script run (`--confirm`), then `/api/snapshots/refresh` and `/api/chain/sync`. `config.production.json` now points `backendUrl` at the new site.
+- **Result (checked from the public site):** `/api/chain/config` shows the new escrow `0x1e05...26Ef` and `explorerBase`; `/api/health`: db, chain, YouTube key, attestor wallet detected, dev bypass off, dangerous keys absent. Refresh updated 1 clip from the real YouTube API; sync indexed 12 events and applied 2. `GET /api/campaigns/<seed id>`: `confirmedViews 3`, `pendingViews 0`, proof = the real CRE transaction `0xa41f91da...c8409`. A browser check of the campaign page shows "Confirmed views, all creators: 3", the Chainlink badge, the proof link and the TESTNET banner.
+- **Not proven:** the creator's own `/ledger` was not opened (sign-in on production needs a wallet signature from `0x8CF9...60e5`); the owner must do that in the browser. The brand `/desk` cannot be signed into (placeholder campaigner). `/api/health` `ready` is false (LLM, World ID, admin wallets, blob storage not configured); not needed for the CRE demo. The manifest is empty until the day of the seeded approval ends (UTC). The records (user, channel, campaign, clip, approval) are seeded and labelled; views, credit and proof are real.
+
+### 19. Vercel steps and a seed script for the deployed database, commit `9d098ef`
 
 - **What:** the owner installed the Vercel CLI and logged in (2026-11-07). Wrote the Vercel steps into `docs/CRE_DEPLOY.md` (section 6) and `web/scripts/seed-cre-demo.mjs`: seeds a creator user, the `@visualsbyanii` channel, a campaign row linked to on-chain campaign 1 and one approved clip, all labelled `[SEED]`. It does NOT seed views, credits or the proof link: those come from the chain (indexer) and the YouTube API (`/api/snapshots/refresh`). It is a dry run unless `--confirm` is given, refuses to continue if an old-escrow campaign already holds on-chain id 1 unless `--retire-old` is given (that only clears the on-chain link of those rows), and is safe to re-run.
 - **Why:** the live database may hold a campaign linked to id 1 of the OLD escrow; the new escrow's campaign 1 would be mixed up with it. The app also needs matching rows before it can show the real Confirmed views for the demo wallet.
@@ -220,7 +226,7 @@ Track status at the start:
 
 ## Waiting on you
 
-00. Deploy this branch to Vercel with the new escrow (`ESCROW_ADDRESS=0x1e05373c199D764f7dE0353d58AFEa2b4C6326Ef`, `ESCROW_DEPLOY_BLOCK=71094327`) so the app shows the Confirmed views; and run `! cre account access` and tell Claude the result.
+00. Sign in at https://clippo-cre.vercel.app with `0x8CF9…60e5` (creator) and open /ledger to see the Confirmed views; run `! cre account access` and tell Claude the result; record the demo.
 0. CRE: run `cre account access` and report the result; put a YouTube Data API key only in `cre/.env` and Vercel; confirm that existing channels must re-verify with a wallet-bound code.
 1. **Clippo backend wallet:** create a new wallet, fund it with testnet USDC, and send me only its address. The address is fixed at deploy. The private key goes in Vercel as `HUMAN_ATTESTOR_PRIVATE_KEY`.
 2. **Arc Studio:** `npm i -g @circle-fin/arc-studio-cli`, then `arc-studio login`.
