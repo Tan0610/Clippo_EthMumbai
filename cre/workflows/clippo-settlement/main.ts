@@ -17,13 +17,24 @@ import {
 import { EVM_PB } from "@chainlink/cre-sdk/pb";
 import { keccak256, stringToHex } from "viem";
 import { z } from "zod";
-import { assertFresh, chunkRows, encodeReport, normalizeSnapshot, parseFrozenFeed, type SnapshotRow } from "./snapshot";
+import {
+  assertFresh,
+  assertReceiverConfigured,
+  chunkRows,
+  encodeReport,
+  normalizeSnapshot,
+  parseFrozenFeed,
+  summarizeReceiverLogs,
+  type ReportOutcome,
+  type SnapshotRow,
+} from "./snapshot";
 
 const configSchema = z.object({
   // 6-field cron (seconds first). Daily at 00:30 UTC by default (after the backend freeze job).
   schedule: z.string(),
   // Clippo backend base URL; the workflow calls GET {backendUrl}{feedPath}[?day=YYYY-MM-DD]
-  backendUrl: z.string().url(),
+  // Regex, not z.string().url(): that relies on the URL global, which throws "Invalid url" in the CRE wasm runtime.
+  backendUrl: z.string().regex(/^https?:\/\/[^\s/?#]+(\/\S*)?$/, "backendUrl must be an http(s) URL"),
   // Frozen daily feed: { day, hash, rows }. Default /api/snapshots/daily.
   feedPath: z.string(),
   // Reject a snapshot whose day is older than this many UTC days (staleness / replay of an old feed).
@@ -58,6 +69,30 @@ const fetchSnapshot = (sendRequester: HTTPSendRequester, config: Config, day: st
   return { day: feed.day, hash: keccak256(stringToHex(rows)), rows };
 };
 
+/**
+ * The receiver swallows per-row reverts (ItemFailed), so a SUCCESS status does not mean every row landed: read the receipt.
+ * Returns null when the receipt cannot be read (e.g. a dry run sent no transaction). Never throws: the report is already delivered.
+ */
+const readReportOutcome = (
+  runtime: Runtime<Config>,
+  evm: InstanceType<typeof cre.capabilities.EVMClient>,
+  txHash: Uint8Array,
+): ReportOutcome | null => {
+  try {
+    const { receipt } = evm.getTransactionReceipt(runtime, { hash: txHash }).result();
+    if (!receipt) return null;
+    const logs = receipt.logs.map((l) => ({
+      address: bytesToHex(l.address),
+      topics: l.topics.map((t) => bytesToHex(t)),
+      data: bytesToHex(l.data),
+    }));
+    return summarizeReceiverLogs(logs, runtime.config.evm.receiverAddress);
+  } catch (e) {
+    runtime.log(`could not read receipt: ${e instanceof Error ? e.message : String(e)}`);
+    return null;
+  }
+};
+
 const settle = (runtime: Runtime<Config>, requestedDay: string): string => {
   const cfg = runtime.config;
 
@@ -78,6 +113,9 @@ const settle = (runtime: Runtime<Config>, requestedDay: string): string => {
   runtime.log(`snapshot rows: ${rows.length}`);
   if (rows.length === 0) return `no-op: empty snapshot for ${agreed.day}`;
 
+  // Checked here, not in configSchema, so a config without a receiver can still simulate the read path of an empty feed.
+  assertReceiverConfigured(cfg.evm.receiverAddress);
+
   // 3. Sign + deliver in batches: report -> forwarder -> ClippoReportReceiver.onReport -> ClippoEscrow.reportViews
   const network = getNetwork({
     chainFamily: "evm",
@@ -89,6 +127,8 @@ const settle = (runtime: Runtime<Config>, requestedDay: string): string => {
 
   const batches = chunkRows(rows, cfg.maxRowsPerReport);
   const txs: string[] = [];
+  let failedRows = 0;
+  let unconfirmedBatches = 0;
   batches.forEach((batch, i) => {
     const report = runtime
       .report({
@@ -113,11 +153,29 @@ const settle = (runtime: Runtime<Config>, requestedDay: string): string => {
     if (resp.receiverContractExecutionStatus === EVM_PB.ReceiverContractExecutionStatus.REVERTED) {
       throw new Error(`onReport reverted for batch ${i + 1}/${batches.length}`);
     }
-    const txHash = resp.txHash ? bytesToHex(resp.txHash) : "n/a";
+    const txHash = resp.txHash?.length ? bytesToHex(resp.txHash) : "n/a";
     runtime.log(`batch ${i + 1}/${batches.length}: ${batch.length} rows, tx ${txHash}`);
     txs.push(txHash);
+
+    if (txHash === "n/a") return; // simulate without --broadcast sends nothing
+    const outcome = readReportOutcome(runtime, evm, resp.txHash!);
+    if (!outcome) {
+      unconfirmedBatches++;
+      runtime.log(`WARNING batch ${i + 1}/${batches.length}: receipt unavailable, row results unconfirmed`);
+      return;
+    }
+    // The forwarder swallows an onReport revert, so the tx succeeds and the status checks above stay green.
+    if (outcome.failed === null) {
+      throw new Error(`batch ${i + 1}/${batches.length}: tx ${txHash} has no ReportProcessed event, the receiver rejected the report (for a simulation receiver, tx.origin must be expectedWorkflowOwner)`);
+    }
+    failedRows += outcome.failed;
+    runtime.log(`batch ${i + 1}/${batches.length}: receiver processed ${outcome.items} rows, ${outcome.failed} failed`);
+    for (const f of outcome.failures) {
+      runtime.log(`WARNING row NOT credited: campaign=${f.campaignId} creator=${f.creator} reason=${f.reason}`);
+    }
   });
-  return `settled day=${agreed.day} rows=${rows.length} reports=${txs.length} txs=${txs.join(",")}`;
+  if (txs.every((tx) => tx === "n/a")) return `dry run, nothing sent: day=${agreed.day} rows=${rows.length} reports=${txs.length}`;
+  return `delivered day=${agreed.day} rows=${rows.length} reports=${txs.length} failedRows=${failedRows} unconfirmedBatches=${unconfirmedBatches} txs=${txs.join(",")}`;
 };
 
 // Trigger 0: daily cron (default: yesterday's frozen snapshot).

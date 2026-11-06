@@ -50,3 +50,38 @@ test("chunkRows splits large batches", () => {
   assert.deepEqual(chunkRows([], 50), []);
   assert.throws(() => chunkRows(rows, 0));
 });
+
+import { encodeAbiParameters, keccak256, pad, stringToHex, type Hex } from "viem";
+import { assertReceiverConfigured, summarizeReceiverLogs } from "./snapshot.ts";
+
+test("assertReceiverConfigured refuses only the zero address", () => {
+  assert.throws(() => assertReceiverConfigured("0x" + "0".repeat(40)), /zero address/);
+  assertReceiverConfigured("0xd7842e13512a45cd6a36def823b316befa75f033");
+});
+
+test("summarizeReceiverLogs reports swallowed rows, names known errors and ignores other contracts", () => {
+  const receiver: Hex = "0xd7842e13512a45cd6a36def823b316befa75f033";
+  const creator: Hex = "0x2222222222222222222222222222222222222222";
+  const notHuman = keccak256(stringToHex("NotHuman()")).slice(0, 10) as Hex;
+  const itemFailed = (reason: Hex, address: Hex = receiver) => ({
+    address,
+    topics: [keccak256(stringToHex("ItemFailed(uint256,address,bytes)")), pad("0x07"), pad(creator)] as Hex[],
+    data: encodeAbiParameters([{ type: "bytes" }], [reason]),
+  });
+  const processed = {
+    address: receiver,
+    topics: [keccak256(stringToHex("ReportProcessed(uint256,uint256)"))] as Hex[],
+    data: encodeAbiParameters([{ type: "uint256" }, { type: "uint256" }], [4n, 2n]),
+  };
+  const out = summarizeReceiverLogs(
+    [itemFailed(notHuman), itemFailed("0xdeadbeef"), itemFailed(notHuman, creator), processed],
+    receiver.toUpperCase().replace("0X", "0x"),
+  );
+  assert.equal(out.items, 4);
+  assert.equal(out.failed, 2);
+  assert.deepEqual(out.failures.map((f) => [f.campaignId, f.creator, f.reason]), [
+    ["7", creator, "NotHuman()"],
+    ["7", creator, "0xdeadbeef"],
+  ]);
+  assert.deepEqual(summarizeReceiverLogs([], receiver), { items: null, failed: null, failures: [] });
+});

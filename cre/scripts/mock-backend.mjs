@@ -2,12 +2,13 @@
 // Local mock of the Clippo backend's frozen daily feed (GET /api/snapshots/daily) for `cre workflow simulate`.
 // Serves the shared fixture (workflows/clippo-settlement/fixtures/snapshot-feed.json) in the same envelope as
 // web/src/lib/snapshots.ts: { day, hash, rows }.  `day` defaults to yesterday (UTC), like the real backend.
-// Usage: node scripts/mock-backend.mjs [--port 8787] [--mode fixture|empty|stale|large|bump] [--large-rows 60]
+// Usage: node scripts/mock-backend.mjs [--port 8787] [--mode fixture|empty|stale|large|bump|unlinked] [--large-rows 60]
 //   fixture  the shared fixture (default)
 //   empty    rows: []            (workflow must no-op)
 //   stale    day = 5 days ago    (workflow must reject)
 //   large    --large-rows N synthetic rows on campaigns 7 and 12 (workflow must batch)
 //   bump     fixture with views +100 on the first row (simulates the next day's snapshot)
+//   unlinked fixture plus a row whose creator has no World ID link (escrow reverts NotHuman, receiver emits ItemFailed)
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -25,6 +26,7 @@ function build() {
   if (mode === "empty") rows = [];
   if (mode === "stale") day = dayOffset(5);
   if (mode === "bump") rows = rows.map((r, i) => (i === 0 ? { ...r, cumulativeViews: r.cumulativeViews + 100 } : r));
+  if (mode === "unlinked") rows = [...rows, { campaignId: "7", creator: "0x2222222222222222222222222222222222222222", cumulativeViews: 777 }];
   if (mode === "large") {
     const n = Number(flag("large-rows", 60));
     rows = Array.from({ length: n }, (_, i) => ({
