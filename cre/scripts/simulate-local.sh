@@ -12,6 +12,10 @@ ANVIL=$!; MOCK=; trap 'kill $ANVIL $MOCK 2>/dev/null || true' EXIT
 until cast block-number --rpc-url "$RPC" >/dev/null 2>&1; do sleep 1; done
 bash scripts/local-chain.sh >&2             # deploys MockUSDC/escrow/receiver, links creators, patches config.staging.json receiverAddress
 set -a; source scripts/.local-chain.env; set +a   # exports CRE_ETH_PRIVATE_KEY (public anvil key)
+# Workflow v2 reads YouTube itself. The CRE secret YOUTUBE_API_KEY comes from the env var YOUTUBE_API_KEY_CRE (cre/secrets.yaml).
+# Obviously fake key; the mock YouTube API (scripts/mock-backend.mjs) only accepts this value, and only in the x-goog-api-key header.
+# Config (config.staging.json) already points backendUrl + youtubeApiBase at the mock on 127.0.0.1:8787.
+export YOUTUBE_API_KEY_CRE=FAKE_YOUTUBE_KEY MOCK_YOUTUBE_KEY=FAKE_YOUTUBE_KEY
 
 mock() {
   if [ -n "$MOCK" ]; then kill "$MOCK" 2>/dev/null; wait "$MOCK" 2>/dev/null || true; fi

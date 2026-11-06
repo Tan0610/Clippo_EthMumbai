@@ -7,37 +7,52 @@ import {
   hexToBase64,
   identical,
   json,
+  median,
   ok,
   Runner,
   TxStatus,
   type HTTPPayload,
   type HTTPSendRequester,
+  type NodeRuntime,
   type Runtime,
+  type ConsensusAggregationFields,
 } from "@chainlink/cre-sdk";
 import { EVM_PB } from "@chainlink/cre-sdk/pb";
 import { keccak256, stringToHex } from "viem";
 import { z } from "zod";
+import { assertFresh, assertReceiverConfigured, chunkRows, encodeReport, summarizeReceiverLogs, type ReportOutcome, type SnapshotRow } from "./snapshot";
 import {
-  assertFresh,
-  assertReceiverConfigured,
-  chunkRows,
-  encodeReport,
-  normalizeSnapshot,
-  parseFrozenFeed,
-  summarizeReceiverLogs,
-  type ReportOutcome,
-  type SnapshotRow,
-} from "./snapshot";
+  batches,
+  buildObservation,
+  channelsUrl,
+  evaluateClips,
+  manifestHash,
+  normalizeManifest,
+  observationFields,
+  parseChannels,
+  parseVideos,
+  sumByCreator,
+  videosUrl,
+  type ManifestClip,
+  type Observation,
+} from "./youtube";
+
+// Name of the CRE secret (cre/secrets.yaml maps it to the env var YOUTUBE_API_KEY_CRE for simulation).
+const YOUTUBE_SECRET_ID = "YOUTUBE_API_KEY";
 
 const configSchema = z.object({
   // 6-field cron (seconds first). Daily at 00:30 UTC by default (after the backend freeze job).
   schedule: z.string(),
-  // Clippo backend base URL; the workflow calls GET {backendUrl}{feedPath}[?day=YYYY-MM-DD]
+  // Clippo backend base URL; the workflow calls GET {backendUrl}{manifestPath}[?day=YYYY-MM-DD]
   // Regex, not z.string().url(): that relies on the URL global, which throws "Invalid url" in the CRE wasm runtime.
   backendUrl: z.string().regex(/^https?:\/\/[^\s/?#]+(\/\S*)?$/, "backendUrl must be an http(s) URL"),
-  // Frozen daily feed: { day, hash, rows }. Default /api/snapshots/daily.
-  feedPath: z.string(),
-  // Reject a snapshot whose day is older than this many UTC days (staleness / replay of an old feed).
+  // Clip manifest: GET {backendUrl}{manifestPath}?day=YYYY-MM-DD -> { day, hash, clips: [{ campaignId, creator, videoId, channelId }] }. Default /api/snapshots/clips.
+  manifestPath: z.string(),
+  // YouTube Data API v3 base URL (the staging config points at the local mock). The API key is a CRE secret, sent in a header.
+  youtubeApiBase: z.string().regex(/^https?:\/\/[^\s/?#]+(\/\S*)?$/, "youtubeApiBase must be an http(s) URL"),
+  // Legacy frozen feed path: only scripts/emulate-delivery.mts reads it; the workflow itself no longer does.
+  feedPath: z.string().optional(),
+  // Reject a manifest whose day is older than this many UTC days (staleness / replay of an old day).
   maxStalenessDays: z.number().int().min(0),
   // Rows per signed report (keeps each onReport under the gas budget).
   maxRowsPerReport: z.number().int().min(1),
@@ -52,21 +67,63 @@ const configSchema = z.object({
 
 type Config = z.infer<typeof configSchema>;
 
-/** What every node returns; each field must be IDENTICAL across nodes (frozen backend snapshot). */
-type NodeView = { day: string; hash: string; rows: string };
+/** What every node returns for the manifest; each field must be IDENTICAL across nodes. */
+type NodeManifest = { day: string; sourceHash: string; hash: string; clips: string };
 
 /**
- * Runs on EACH node: fetch the frozen snapshot, validate + canonicalise rows, and return {day, hash, rows}
- * where hash = keccak256(canonical rows). The DON requires all three fields to be identical, so a node that sees
- * different bytes (e.g. a snapshot that changed mid-day) breaks consensus instead of being signed.
+ * Runs on EACH node: fetch the clip manifest, validate + canonicalise it, and return it as strings. The DON requires every
+ * field to be identical, so a node that sees different bytes breaks consensus instead of being signed.
  */
-const fetchSnapshot = (sendRequester: HTTPSendRequester, config: Config, day: string): NodeView => {
+const fetchManifest = (sendRequester: HTTPSendRequester, config: Config, day: string): NodeManifest => {
   const qs = day ? `?day=${encodeURIComponent(day)}` : "";
-  const res = sendRequester.sendRequest({ url: `${config.backendUrl}${config.feedPath}${qs}`, method: "GET" }).result();
-  if (!ok(res)) throw new Error(`snapshot request failed: HTTP ${res.statusCode}`);
-  const feed = parseFrozenFeed(json(res));
-  const rows = normalizeSnapshot(feed.rows);
-  return { day: feed.day, hash: keccak256(stringToHex(rows)), rows };
+  const res = sendRequester.sendRequest({ url: `${config.backendUrl}${config.manifestPath}${qs}`, method: "GET" }).result();
+  if (!ok(res)) throw new Error(`manifest request failed: HTTP ${res.statusCode}`);
+  const m = normalizeManifest(json(res));
+  return { day: m.day, sourceHash: m.sourceHash, hash: manifestHash(m.clips), clips: JSON.stringify(m.clips) };
+};
+
+/** One YouTube GET with the API key in a header (never in the URL, never logged). Errors carry only the status code. */
+const youtubeGet = (nodeRuntime: NodeRuntime<Config>, url: string, apiKey: string, what: string): unknown => {
+  const res = new cre.capabilities.HTTPClient()
+    .sendRequest(nodeRuntime, { url, method: "GET", multiHeaders: { "x-goog-api-key": { values: [apiKey] } } })
+    .result();
+  if (!ok(res)) throw new Error(`youtube ${what} failed: HTTP ${res.statusCode}`);
+  return json(res);
+};
+
+/**
+ * Runs on EACH node: read every manifest clip's live view count and channel from the YouTube Data API, keep a clip only
+ * if its channel matches the manifest and the channel bio holds clippo:<creator wallet>, and return the fixed-shape
+ * record { kept, v0..vN }. Dropped clips are logged with the reason (no secrets).
+ */
+const readYoutube = (nodeRuntime: NodeRuntime<Config>, clips: ManifestClip[], apiKey: string): Observation => {
+  const base = nodeRuntime.config.youtubeApiBase;
+  const videos = new Map<string, { channelId: string; views: number | null }>();
+  for (const ids of batches([...new Set(clips.map((c) => c.videoId))])) {
+    parseVideos(youtubeGet(nodeRuntime, videosUrl(base, ids), apiKey, "videos.list")).forEach((v, id) => videos.set(id, v));
+  }
+  // Only channels of videos that really sit on the channel the manifest names are worth a bio lookup.
+  const channelIds = [...new Set(clips.filter((c) => videos.get(c.videoId)?.channelId === c.channelId).map((c) => c.channelId))];
+  const bios = new Map<string, string>();
+  for (const ids of batches(channelIds)) {
+    parseChannels(youtubeGet(nodeRuntime, channelsUrl(base, ids), apiKey, "channels.list")).forEach((b, id) => bios.set(id, b));
+  }
+  const checks = evaluateClips(clips, videos, bios);
+  checks.forEach((c, i) => {
+    if (!c.kept) nodeRuntime.log(`clip dropped: campaign=${clips[i].campaignId} creator=${clips[i].creator} video=${clips[i].videoId}: ${c.reason}`);
+  });
+  return buildObservation(checks);
+};
+
+/**
+ * Consensus map for a manifest of n clips: `kept` must be IDENTICAL, every view count takes the MEDIAN across nodes.
+ * The field set depends on n, so it is built at runtime (n is only known after the manifest is agreed); the SDK reads
+ * the map with Object.keys, so a dynamic map is fine, only the static type needs a cast.
+ */
+const observationAggregation = (n: number) => {
+  const fields: Record<string, () => unknown> = {};
+  for (const name of observationFields(n)) fields[name] = name === "kept" ? identical : median;
+  return ConsensusAggregationByFields<Observation>(fields as unknown as ConsensusAggregationFields<Observation>);
 };
 
 /**
@@ -96,27 +153,34 @@ const readReportOutcome = (
 const settle = (runtime: Runtime<Config>, requestedDay: string): string => {
   const cfg = runtime.config;
 
-  // 1. Read + reach consensus on the frozen snapshot
+  // 1. Read + reach consensus on the clip manifest (which clips to check; no view counts in it)
   const http = new cre.capabilities.HTTPClient();
-  const agreed = http
+  const manifest = http
     .sendRequest(
       runtime,
-      fetchSnapshot,
-      ConsensusAggregationByFields<NodeView>({ day: identical, hash: identical, rows: identical }),
+      fetchManifest,
+      ConsensusAggregationByFields<NodeManifest>({ day: identical, sourceHash: identical, hash: identical, clips: identical }),
     )(cfg, requestedDay)
     .result();
-  runtime.log(`snapshot agreed: day=${agreed.day} hash=${agreed.hash}`);
+  runtime.log(`manifest agreed: day=${manifest.day} hash=${manifest.hash}`);
 
-  // 2. Staleness guard (DON time) + empty feed
-  assertFresh(agreed.day, runtime.now(), cfg.maxStalenessDays);
-  const rows = JSON.parse(agreed.rows) as SnapshotRow[];
-  runtime.log(`snapshot rows: ${rows.length}`);
-  if (rows.length === 0) return `no-op: empty snapshot for ${agreed.day}`;
+  // 2. Staleness guard (DON time) + empty manifest
+  assertFresh(manifest.day, runtime.now(), cfg.maxStalenessDays);
+  const clips = JSON.parse(manifest.clips) as ManifestClip[];
+  runtime.log(`manifest clips: ${clips.length}`);
+  if (clips.length === 0) return `no-op: empty manifest for ${manifest.day}`;
+
+  // 3. Every node reads YouTube itself; views take the median, the set of kept clips must be identical.
+  const apiKey = runtime.getSecret({ id: YOUTUBE_SECRET_ID }).result().value;
+  const observed = runtime.runInNodeMode(readYoutube, observationAggregation(clips.length))(clips, apiKey).result();
+  const rows: SnapshotRow[] = sumByCreator(clips, observed);
+  runtime.log(`youtube agreed: kept ${observed.kept === "" ? 0 : observed.kept.split(",").length}/${clips.length} clips, ${rows.length} creator rows`);
+  if (rows.length === 0) return `no-op: no clip passed the YouTube checks for ${manifest.day}`;
 
   // Checked here, not in configSchema, so a config without a receiver can still simulate the read path of an empty feed.
   assertReceiverConfigured(cfg.evm.receiverAddress);
 
-  // 3. Sign + deliver in batches: report -> forwarder -> ClippoReportReceiver.onReport -> ClippoEscrow.reportViews
+  // 4. Sign + deliver in batches: report -> forwarder -> ClippoReportReceiver.onReport -> ClippoEscrow.reportViews
   const network = getNetwork({
     chainFamily: "evm",
     chainSelectorName: cfg.evm.chainSelectorName,
@@ -174,14 +238,14 @@ const settle = (runtime: Runtime<Config>, requestedDay: string): string => {
       runtime.log(`WARNING row NOT credited: campaign=${f.campaignId} creator=${f.creator} reason=${f.reason}`);
     }
   });
-  if (txs.every((tx) => tx === "n/a")) return `dry run, nothing sent: day=${agreed.day} rows=${rows.length} reports=${txs.length}`;
-  return `delivered day=${agreed.day} rows=${rows.length} reports=${txs.length} failedRows=${failedRows} unconfirmedBatches=${unconfirmedBatches} txs=${txs.join(",")}`;
+  if (txs.every((tx) => tx === "n/a")) return `dry run, nothing sent: day=${manifest.day} rows=${rows.length} reports=${txs.length}`;
+  return `delivered day=${manifest.day} rows=${rows.length} reports=${txs.length} failedRows=${failedRows} unconfirmedBatches=${unconfirmedBatches} txs=${txs.join(",")}`;
 };
 
-// Trigger 0: daily cron (default: yesterday's frozen snapshot).
+// Trigger 0: daily cron (default day: the backend's choice, yesterday).
 const onCron = (runtime: Runtime<Config>): string => settle(runtime, "");
 
-// Trigger 1: HTTP, for on-demand/manual settlement. Optional body {"day":"YYYY-MM-DD"} selects an older frozen day.
+// Trigger 1: HTTP, for on-demand/manual settlement. Optional body {"day":"YYYY-MM-DD"} selects an older day.
 const onHttp = (runtime: Runtime<Config>, payload: HTTPPayload): string => {
   let day = "";
   if (payload.input && payload.input.length > 0) {
