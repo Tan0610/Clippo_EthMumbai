@@ -4,10 +4,11 @@ import { api, DEMO, errText } from "./api";
 import { useAsync, useChainInfo, useEscrow, useSession } from "./hooks";
 import { escrowReady } from "./wallet";
 import { Correction, DemoNote, Empty, Loading, PageHead } from "./Bits";
-import { MODE_LABEL, money, whole } from "./format";
+import { MODE_LABEL, money } from "./format";
 import { Coins } from "./Icons";
 import { CreatorHead, ModuleLinks, MySubmissions } from "./LedgerDash";
 import { FeePreview } from "./FeePreview";
+import { ClippoCount, ConfirmedNote, ConfirmedViews, hasConfirmed } from "./ConfirmedViews";
 
 export function LedgerView() {
   const e = useAsync(api.earnings);
@@ -32,6 +33,12 @@ export function LedgerView() {
   const claimable = ready.reduce((a, r) => a + owed(r), 0);
   const frozenTotal = open.filter((r) => r.frozen).reduce((a, r) => a + owed(r), 0);
   const claimedTotal = rows.filter((r) => r.claimed).reduce((a, r) => a + r.amount, 0);
+  /* Confirmed and pending per campaign, and in total. CRE reports PER_VIEW and POOL_SHARE campaigns only. */
+  const cre = data ? data.estimates.filter((r) => hasConfirmed(r.mode)) : [];
+  const creTotal = {
+    confirmed: cre.reduce((a, r) => a + (r.confirmedViews ?? 0), 0),
+    pending: cre.reduce((a, r) => a + (r.pendingViews ?? Math.max(0, r.views - (r.confirmedViews ?? 0))), 0),
+  };
   const unconfigured = !DEMO && !!chain && !escrowReady(chain);
 
   /** Claims are separate per campaign, so one failed transfer never blocks the others. */
@@ -100,6 +107,7 @@ export function LedgerView() {
 
             <section className="stack" aria-labelledby="est">
               <div className="section-title" style={{ marginBottom: 0 }}><h2 id="est">Still earning</h2><span className="micro">Estimates, before fees</span></div>
+              {cre.length > 0 && <ConfirmedNote />}
               {data.estimates.length === 0 ? (
                 <Empty title="No campaigns yet.">Submit a clip to a campaign and it shows up here.</Empty>
               ) : (
@@ -112,11 +120,14 @@ export function LedgerView() {
                         <tr key={r.campaignId}>
                           <td className="lead-cell"><b>{r.title}</b><span className="sub">{MODE_LABEL[r.mode]}</span></td>
                           <td className="n" data-l="Approved clips">{r.approvedClips}</td>
-                          <td className="n" data-l="Views">{whole(r.views)}</td>
+                          <td className="n" data-l="Views">{hasConfirmed(r.mode) ? <ConfirmedViews variant="cell" mode={r.mode} confirmed={r.confirmedViews} pending={r.pendingViews} clippo={r.views} proof={r.proof} /> : <ClippoCount views={r.views} />}</td>
                           <td className="n" data-l="Est. USDC">{r.est === null ? "set by split" : money(r.est)}</td>
                         </tr>
                       ))}
                     </tbody>
+                    {cre.length > 1 && (
+                      <tfoot><tr><td colSpan={2}>Total, confirmed and pending</td><td className="n"><ConfirmedViews variant="cell" confirmed={creTotal.confirmed} pending={creTotal.pending} /></td><td /></tr></tfoot>
+                    )}
                   </table>
                 </div>
               )}

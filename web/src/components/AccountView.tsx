@@ -1,30 +1,55 @@
 "use client";
 import { useCallback, useState } from "react";
 import { useAsync, useSession } from "./hooks";
-import { actions, type WorldProof } from "./api";
+import { actions, mk, type WorldProof } from "./api";
 import { Correction, Loading, PageHead } from "./Bits";
 import { VerifiedMark } from "./Icons";
-import { ChannelProof } from "./JoinView";
+import { ChannelProof, ChannelReverify } from "./JoinView";
+import { hasConfirmed } from "./ConfirmedViews";
 import { WorldCheck, worldFailText, type WorldResult } from "./WorldCheck";
+
+/** Pending views but nothing confirmed yet: say why, and what to do. Renders nothing otherwise. */
+function PendingHint() {
+  const d = useAsync(mk.creatorDash);
+  if (d.status !== "ready") return null;
+  const { totals, campaigns } = d.data;
+  if (!campaigns.some((c) => hasConfirmed(c.mode)) || (totals.pendingViews ?? 0) <= 0 || (totals.confirmedViews ?? 0) > 0) return null;
+  return (
+    <p className="notice warn" role="status">
+      <b>{Math.round(totals.pendingViews ?? 0).toLocaleString("en-US")} pending views, none confirmed.</b>
+      Chainlink nodes confirm views only for approved clips on a YouTube channel whose bio holds your code. Check the code below, then wait for the next report.
+    </p>
+  );
+}
 
 function Channels() {
   const fn = useCallback(() => actions.channels(), []);
   const ch = useAsync(fn);
   const [adding, setAdding] = useState(false);
+  const [done, setDone] = useState<string[]>([]);
   return (
     <section className="stack" aria-labelledby="ch">
       <div className="section-title" style={{ marginBottom: 0 }}><h2 id="ch">Channels</h2></div>
+      <PendingHint />
       {ch.status === "loading" && <Loading rows={2} label="Reading your channels" />}
       {ch.status === "error" && <Correction what={ch.error} fix="Channels belong to creator accounts." onRetry={ch.retry} />}
       {ch.status === "ready" && (
         <ul>
           {ch.data.length === 0 && <li className="muted" style={{ padding: "12px 0" }}>No channels yet.</li>}
-          {ch.data.map((c) => (
-            <li key={c.id} className="row-between" style={{ padding: "12px 0", borderBottom: "1px solid var(--rule-soft)" }}>
-              <span><b>{c.handle}</b> <span className="micro">{c.platform.toLowerCase()}</span></span>
-              <span className="micro" style={{ color: c.verified ? "var(--ok)" : "var(--hold)" }}>{c.verified ? "Proven" : "Code pending"}</span>
-            </li>
-          ))}
+          {ch.data.map((c) => {
+            const fixed = done.includes(c.id);
+            const reverify = !fixed && (c.needsReverify || (!c.verified && !!c.verificationCode));
+            const ok = fixed || (c.verified && !c.needsReverify);
+            return (
+              <li key={c.id} style={{ padding: "12px 0", borderBottom: "1px solid var(--rule-soft)" }}>
+                <div className="row-between">
+                  <span><b>{c.handle}</b> <span className="micro">{c.platform.toLowerCase()}</span></span>
+                  <span className="micro" style={{ color: ok ? "var(--ok)" : "var(--hold)" }}>{ok ? "Proven" : c.needsReverify ? "Re-verify needed" : "Code pending"}</span>
+                </div>
+                {reverify && <ChannelReverify channel={c} onDone={() => setDone((d) => [...d, c.id])} />}
+              </li>
+            );
+          })}
         </ul>
       )}
       {adding ? (
