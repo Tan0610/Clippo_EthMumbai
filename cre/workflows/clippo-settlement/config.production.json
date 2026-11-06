@@ -1,6 +1,8 @@
 {
   "schedule": "0 30 0 * * *",
   "backendUrl": "https://clippo-six.vercel.app",
+  "manifestPath": "/api/snapshots/clips",
+  "youtubeApiBase": "https://www.googleapis.com/youtube/v3",
   "feedPath": "/api/snapshots/daily",
   "maxStalenessDays": 2,
   "maxRowsPerReport": 25,
