@@ -3,6 +3,15 @@ import { db } from "@/lib/db";
 import { ApiError } from "@/lib/http";
 import { type WorldIdProof, type WorldIdVerifier, worldIdAction } from "./index";
 
+/* WHY PROOF OF HUMAN (credential rationale)
+   Trust event: creator account sign-up. It unlocks channel proof, deals, submissions and claims, i.e. where USDC can be
+   paid out. Risk: one person farming many creator accounts to collect multiple payouts (sybil).
+   Proof of Human is the minimum credential that gives per-human uniqueness: one nullifier per human per action, stored
+   unique in User.worldIdNullifier. Selfie Check would show "a live person" but not one-human-one-payout-account
+   uniqueness; Passport/NFC proves a document attribute, not cross-population uniqueness. This limits duplicate accounts;
+   it does not prove honesty. Release approvals need freshness/assurance, not uniqueness, and are gated separately
+   (auth.world.org step-up). */
+
 /** Nullifiers are compared as text; hex casing must never create a second "human". */
 export const normalizeNullifier = (n: string) => (/^0x[0-9a-f]+$/i.test(n.trim()) ? n.trim().toLowerCase() : n.trim());
 

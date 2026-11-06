@@ -114,6 +114,29 @@ describe("guardrail: the Agent Pass split proposer can only propose, never relea
     }
   });
 
+  it("agent code (lib/agentpass, lib/agents, agent routes) can never start, authorize, consume or write a World ID step-up", () => {
+    const agentLib = walk(path.join(SRC, "lib/agents")).filter((f) => f.endsWith(".ts") && !isTest(f));
+    for (const f of [...agentPassLib, ...agentLib, ...agentRoutes]) {
+      const src = readFileSync(f, "utf8");
+      const c = read(f);
+      expect(src, f).not.toMatch(/from\s+["'][^"']*(worldauth\/(stepup|client|idtoken)|splitapproval)["']/);
+      expect(c, f).not.toMatch(/(startStepUp|completeCallback|consumeStepUp|peekStepUp|stepUpAttempt)/);
+      expect(c, f).not.toMatch(/\.(humanAttestation|usedProof|splitProposal|payout)\.(create|createMany|update|updateMany|upsert|delete|deleteMany)/);
+    }
+  });
+
+  it("an agent proposal can only be released through the step-up: the route refuses an IDKit-only proof before verifying it, and consumes the step-up before creating the approval", () => {
+    const c = read(splitRoute);
+    const gate = c.indexOf("stepUpError(");
+    const check = c.indexOf("checkFreshProof(");
+    const consume = c.indexOf("consumeStepUp(");
+    const create = c.indexOf("splitProposal.create");
+    expect(gate).toBeGreaterThan(0);
+    expect(check).toBeGreaterThan(gate);
+    expect(consume).toBeGreaterThan(0);
+    expect(create).toBeGreaterThan(consume);
+  });
+
   it("the only code that creates a split approval first verifies and consumes a fresh World ID proof", () => {
     const c = read(splitRoute);
     const check = c.indexOf("checkFreshProof(");
