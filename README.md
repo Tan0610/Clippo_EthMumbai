@@ -1,29 +1,70 @@
 # Clippo
 
-Clippo is a clipping-and-bounty marketplace. Brands fund a USDC pool, World-ID-verified creators post clips, an AI verifier checks each clip against the brand's story, and payouts settle on-chain (Arc) with views delivered by a Chainlink CRE workflow. Creators claim their own money; unspent funds return to the brand. An AI agent proposes, but never moves money alone. This describes the code in HEAD. A public test site runs at https://clippo-cre.vercel.app (deployed with the Vercel CLI from the feature branch; it will be redeployed from main after the merge).
+Clippo is a clipping-and-bounty marketplace on Arc. A brand funds a USDC pool, a World-ID-verified creator posts a clip, an AI checks it against the brand's brief, a Chainlink CRE workflow reads the clip's views from YouTube and reports them on-chain, and the escrow pays the creator. Unspent money goes back to the brand. An AI agent can propose a payout split, but it never moves money alone.
 
-Built for ETHGlobal Mumbai. Tracks: Chainlink "Best workflow with CRE", World "World ID Agent Pass", World "Best Use of IDKit", Arc "Best Smart Contracts with Advanced Stablecoin Logic, In Arc Studio". See `docs/TRACKS.md`. Every Arc prize requires an Arc Studio project. Arc Studio has not been used yet (see "Honest status").
+Built for ETHGlobal Mumbai 2026. Status date: Sat 2026-11-07. Everything below says what was run and what was not.
+
+## How it works
+
+1. **Fund.** A brand creates a campaign and funds a USDC pool in the escrow on Arc. An admin approves it. Three payout modes: pay per view, share the pool by views, or a human-approved split.
+2. **Prove a human.** A creator proves they are a unique person with World ID (IDKit). The backend then links their wallet to that human on-chain. The escrow only credits linked wallets.
+3. **Prove a channel and post.** The creator puts `clippo:<wallet>` in their YouTube bio and submits a clip. An AI verifier (Claude or Gemini) checks it against the brief. Low confidence goes to a human.
+4. **Confirm the views.** A Chainlink CRE workflow reads the views of every approved clip directly from YouTube (median across nodes) and reports them to a receiver contract. Only that receiver can credit views in the escrow, so no Clippo key can invent views.
+5. **Pay.** Credits wait in a 7-day retention window in which the brand can dispute them. Then the creator claims USDC, or Clippo's wallet claims for them (the money can only reach the creator).
+6. **Show the proof.** The app shows Confirmed views (what CRE put on-chain, with a link to the transaction) next to Pending views (Clippo's own count).
+
+## Live demo and evidence
+
+| What | Where |
+| --- | --- |
+| Deployed test app (Arc testnet, built from `main`) | https://clippo-cre.vercel.app. The user, channel, campaign and clip behind the demo page are seeded and labelled `[SEED]`; the views, the credit and the proof are real. |
+| Campaign page showing Confirmed views | https://clippo-cre.vercel.app/slips/cmw5jiz940005scec1r7rcyaz (3 confirmed views, Chainlink badge, proof link) |
+| Escrow `ClippoEscrow` | https://explorer.testnet.arc.io/address/0x1e05373c199D764f7dE0353d58AFEa2b4C6326Ef |
+| Receiver `ClippoReportReceiver` | https://explorer.testnet.arc.io/address/0x6b0f6C0f324C615Add6BfcA5EE0b8eeD66F2C0cd |
+| CRE report on real Arc (reads the real YouTube video) | https://explorer.testnet.arc.io/tx/0xa41f91daf5431332ecaf1fbdfbf7f8ca13a38d39de8c41d0c1291f229f5c8409 (`reportedViews` 3, 0.03 USDC credited) |
+| Saved CLI output of that run | `docs/tracks/cre-simulation-real-arc.txt` |
+| Tests (2026-11-07, on the merged tree) | `forge test` 114 passed, web 325 passed (1 skipped), CRE 26 passed |
+| Demo video | Not recorded yet. ETHGlobal rule: 2 to 4 minutes, over 4:00 is rejected |
+
+## Tracks
+
+Three partners, as three picks on the submission form. The prize text was re-read on 2026-11-07.
+
+| Partner and track | What Clippo built for it | Status | Read |
+| --- | --- | --- | --- |
+| **Chainlink**, Best workflow with CRE ($1,500) | A CRE workflow where the nodes read YouTube views themselves, keep a clip only if the channel bio holds `clippo:<wallet>`, take the median, and report to the receiver. The escrow credits views only from that receiver. | Simulated with the CRE CLI on real Arc: 1 report, `reportedViews` 3. **Not** deployed on the CRE network (deploy access not enabled). One node, our own wallet sends the report through Chainlink's test forwarder. | `docs/tracks/CRE.md` |
+| **World**, Best Use of IDKit ($2,500) | IDKit proof of human at sign-up (`proofOfHuman` preset), verified on the server, then linked to the wallet on-chain by the backend. An unverified account cannot post, and the escrow will not credit an unlinked wallet. | Integrated and tested with test doubles. **Not** run live: no real World proof has run, and `WORLD_ID_*` is not set on the deployed site. Debrief not filled. | `docs/tracks/WORLD_IDKIT.md` |
+| **Arc**, Best Smart Contracts with Advanced Stablecoin Logic, In Arc Studio ($3,000) | An escrow with three payout modes, retention, on-chain disputes with automatic release, fee splits to a treasury, signed human approvals, and a receiver for CRE reports; USDC is the settlement and gas token. Deployed on Arc testnet. | Contracts, frontend and backend are real and deployed. Crosschain is not built. **Arc Studio was not used by us** to write or deploy the escrow (Foundry and a forge script); the prize requires it. | `docs/SUBMISSION_ARC.md`, `docs/tracks/ARC.md` |
+
+Related, not one of the three picks in this table: the World **Agent Pass** step-up that gates releasing an AI-proposed split (`docs/tracks/WORLD_AGENT_PASS.md`). It is written and tested, and has never run against the real `auth.world.org` service.
+
+## How AI was used, and project history
+
+ETHGlobal asks for this in the submission, so here it is.
+
+- **Runtime AI:** the clip verifier, the campaign writer and the assistants call Claude or Gemini (`LLM_PROVIDER`). A person decides unsure cases, and an agent never moves money alone.
+- **Built with AI:** Claude Code (Anthropic) wrote and edited much of the code, tests and docs under the owner's direction, and made the track reviews. Every batch of work is recorded in `docs/BUILD_LOG.md`, with what was run and what was not.
+- **Done by people:** the product decisions, the accounts and API keys, funding the wallets, and signing the contract deploys with the owner's own wallet. A teammate wrote the World auth.world.org step-up that is on `main`.
+- **History:** this repository existed before the event. The first commit is dated 2026-10-28, and `git log` shows authorship and dates. Nothing here claims the whole project was built during the event.
+
+## Docs
 
 | Doc | Purpose |
 | --- | --- |
-| `docs/FOCUS.md` | Plan and rules: the one rule for partners, the deadline, what to build next |
-| `docs/BUILD_LOG.md` | Running record of every change, decisions, and how to go back |
-| `docs/ARCHITECTURE.md` | Diagrams (architecture + money flow) |
-| `docs/TRACKS.md` | Track to code mapping, failure paths, integration debrief template |
-| `docs/DEMO_SCRIPT.md` | Video script. ETHGlobal rule: 2 to 4 minutes, anything over 4:00 is rejected, 720p or better, no AI voiceover, not sped up |
-| `docs/RUNBOOK.md` | Deploy, env, CRE simulate, seed, what replaced the mocks |
-| `docs/SUBMISSION_CHECKLIST.md` | What to submit |
-| `docs/SUBMISSION_ARC.md` | Arc submission writeup and deploy runbook |
-| `docs/DEPLOY.md` | Deploying the web app to Vercel (public test deployment) |
-| `docs/DEPLOY_ENV.md` | Vercel env variables, including the do-not-set-on-Vercel list |
-| `docs/CRE_DEPLOY.md` | Deploy sheet for the real Arc testnet CRE demo (wallets, steps, what was done on Vercel) |
-| `docs/WORLD_USER_TODO.md` | Manual World steps only a person can do (auth.world.org client, Developer Portal) |
-| `docs/E2E_CHAIN.md` | Local end-to-end money-flow test (stale, not updated for the enforcing escrow) |
-| `docs/BACKEND_CONFORMANCE.md` | Audit of the backend against the PRD |
-| `docs/WORLD_SETUP_CHECK.md` | World ID setup check (results from 2026-10-28, not re-run) |
-| `docs/tracks/` | Per-track writeups, demo scripts and the saved CRE simulation output |
-| `web/API.md` | Full HTTP API reference |
-| `contracts/README.md`, `cre/README.md` | Contract and workflow details |
+| `docs/SUBMISSION_ARC.md`, `docs/tracks/ARC.md` | Arc track: what was built, mapped to each prize line, with evidence and open items |
+| `docs/tracks/WORLD_IDKIT.md` | IDKit track: the trust moment, the credential, the verification and the failure paths |
+| `docs/tracks/CRE.md` | CRE track: requirements, evidence, the three-screen demo, how to reproduce |
+| `docs/TRACKS.md` | Track to code map, failure paths, debrief templates |
+| `docs/ARCHITECTURE.md`, `docs/architecture.svg` | Architecture and money flow |
+| `docs/SUBMISSION_CHECKLIST.md` | What to submit and what is still open |
+| `docs/DEMO_SCRIPT.md` | Video script (2 to 4 minutes, no AI voiceover, not sped up) |
+| `docs/FOCUS.md` | Plan and rules: the partner rule, what we may and may not claim |
+| `docs/BUILD_LOG.md` | Running record of every change, decision and result |
+| `docs/CRE_PLAN.md`, `docs/CRE_SCOPE.md`, `docs/CRE_DEPLOY.md` | CRE plan, scope and the Arc and Vercel deploy sheet |
+| `docs/RUNBOOK.md`, `docs/DEPLOY.md`, `docs/DEPLOY_ENV.md` | Run, deploy, environment variables (including the do-not-set-on-Vercel list) |
+| `docs/WORLD_USER_TODO.md`, `docs/WORLD_SETUP_CHECK.md` | World setup steps only a person can do, and the setup check |
+| `docs/E2E_CHAIN.md`, `docs/BACKEND_CONFORMANCE.md` | Old local money-flow test (stale for the new escrow) and a backend audit |
+| `web/API.md`, `contracts/README.md`, `cre/README.md` | HTTP API, contracts, workflow |
 
 ## Layout
 
@@ -109,8 +150,8 @@ As of Sat 2026-11-07, after the work in `docs/BUILD_LOG.md` (entries 17 to 20: t
 | --- | --- |
 | Escrow contracts (3 modes, fees, reject refund, deadlines) | `ClippoEscrow` in HEAD is the enforcing escrow (`498f649`): PerView credits and PoolShare weights only from the one-time report adapter (CRE), HumanSplit needs a fresh World ID approval signed by `humanAttestor`, only wallets linked to a unique human can be credited, per-campaign retention and grace, on-chain disputes, `reclaimUnapproved`, `claimFor`. There are 114 Foundry test functions in `contracts/test`; `docs/BUILD_LOG.md` records them passing (not re-run for this edit). **Deployed on real Arc testnet in simulation mode** (BUILD_LOG 17, read back from the chain): escrow `0x1e05373c199D764f7dE0353d58AFEa2b4C6326Ef` (deploy block 71094327), receiver `0x6b0f6C0f324C615Add6BfcA5EE0b8eeD66F2C0cd`. The deploy script created and approved campaign 1 ($10 per 1,000 views, 5 USDC pool) with the plain `approveCampaign(id)`, and linked the demo creator wallet with an attestor-signed `registerHuman` (a stand-in for the World check). Not proven on real Arc: approvals with a signed World ID `proof` (`approveCampaign(id, proof)`, `approveSplit`), disputes, `claimFor`, the retention window. Two escrows from the OLD design (before enforcement) also exist on Arc testnet: `0xd8453c22996bea11598a3dbf05112675b945c39c` (what the old clippo-six site pointed at) and `0xc7b9588ee0a4bff31e17ece1141ea404ad05e310` (cited in `docs/SUBMISSION_ARC.md`); neither has the HEAD code. No broadcast record is committed (`contracts/broadcast` is absent); `contracts/.gitignore` lets only `broadcast/Deploy.s.sol/5042002/run-latest.json` through, so the record of a real deploy can be committed. |
 | `ClippoReportReceiver` (IReceiver adapter) | Real code, tested with a stand-in forwarder. In HEAD the owner can freeze all settings with `lockConfig`, and in simulation mode, when a workflow owner is set, only transactions whose `tx.origin` is that owner can report. Ran on an anvil fork of Arc and on real Arc through Arc's MockKeystoneForwarder (see CRE row). On real Arc it is NOT locked: simulation forwarder, our simulation wallet as workflow owner, `workflowCheckSkipped` true. Not tested against a live KeystoneForwarder. |
-| CRE workflow | Workflow v2: the nodes read YouTube themselves. Clippo only says WHICH clips to check (`GET /api/snapshots/clips`); a clip counts only if the channel bio holds `clippo:<wallet>`; the nodes agree on the median view count. It simulates: `bash scripts/simulate-local.sh` (CLI v1.39.0, local anvil fork of Arc, mock backend, fake YouTube API) kept 3 of 5 clips and credited creators on the fork; a real YouTube read ran on a local fork; and `cre workflow simulate --broadcast` on **real Arc testnet** (`docs/tracks/cre-simulation-real-arc.txt`) read the real YouTube API ("kept 1/1 clips", 1 report, 0 failed rows) and delivered tx `0xa41f91daf5431332ecaf1fbdfbf7f8ca13a38d39de8c41d0c1291f229f5c8409` to the escrow; `cast call` read back `reportedViews` 3 and `credited` 30000 units (0.03 USDC). Not proven: it is a simulation. One CRE node, and the report was sent by our own simulation wallet through Arc's Chainlink TEST forwarder, so no Chainlink nodes signed it and no multi-node consensus ran. The manifest for that run came from a local mock backend. No workflow is deployed (deploy needs CRE Early Access). `config.production.json` has the real receiver and `backendUrl` `https://clippo-cre.vercel.app`. `cd cre && npm test` and `npm run typecheck` pass (not re-run after the merge with main). |
-| Backend API + Prisma (Postgres) | Real. `npm test` runs the API against a throwaway Postgres (`docs/BUILD_LOG.md` records 311 web tests passing, 1 skipped, at `0c3e401`; not re-run after the merge with main). Session auth is SIWE in production; the unsigned dev sign-in only works outside production. |
+| CRE workflow | Workflow v2: the nodes read YouTube themselves. Clippo only says WHICH clips to check (`GET /api/snapshots/clips`); a clip counts only if the channel bio holds `clippo:<wallet>`; the nodes agree on the median view count. It simulates: `bash scripts/simulate-local.sh` (CLI v1.39.0, local anvil fork of Arc, mock backend, fake YouTube API) kept 3 of 5 clips and credited creators on the fork; a real YouTube read ran on a local fork; and `cre workflow simulate --broadcast` on **real Arc testnet** (`docs/tracks/cre-simulation-real-arc.txt`) read the real YouTube API ("kept 1/1 clips", 1 report, 0 failed rows) and delivered tx `0xa41f91daf5431332ecaf1fbdfbf7f8ca13a38d39de8c41d0c1291f229f5c8409` to the escrow; `cast call` read back `reportedViews` 3 and `credited` 30000 units (0.03 USDC). Not proven: it is a simulation. One CRE node, and the report was sent by our own simulation wallet through Arc's Chainlink TEST forwarder, so no Chainlink nodes signed it and no multi-node consensus ran. The manifest for that run came from a local mock backend. No workflow is deployed (deploy needs CRE Early Access). `config.production.json` has the real receiver and `backendUrl` `https://clippo-cre.vercel.app`. `cd cre && npm test` (26 passed), `npm run typecheck` and `npm run compile` pass on the merged tree (2026-11-07). |
+| Backend API + Prisma (Postgres) | Real. `npm test` runs the API against a throwaway Postgres (`docs/BUILD_LOG.md` records 325 web tests passing, 1 skipped, on the merged tree on 2026-11-07). Session auth is SIWE in production; the unsigned dev sign-in only works outside production. |
 | AI verifier / campaign writer | Real Claude or Gemini calls (`LLM_PROVIDER`; Gemini runs on the free AI Studio key, limits in docs/RUNBOOK.md; AI video generation is paid-tier only); without a key the endpoints answer 503 `NOT_CONFIGURED` (no keyword mock). Exercised against stubbed responses only. |
 | World ID (IDKit) | IDKit widget + backend `rp-signature` / `verify` (v4) are wired. After a verify, the backend links the wallet to the human on-chain (`registerHuman`, signed by `HUMAN_ATTESTOR_PRIVATE_KEY`). Needs `WORLD_ID_*`; not run against the live Developer Portal, and the on-chain link has not run on real Arc. World ID proofs for the prize are mocked fake identities, not for production. |
 | World Agent Pass | The official product is the OIDC service at `auth.world.org`. Releasing an agent-proposed split goes through a World step-up (`web/src/lib/worldauth/*`; routes `POST /api/campaigns/:id/stepup/start`, `GET /api/auth/world/callback`, `GET /api/stepup/:attemptId`; the approve calls take `stepUpAttemptId`). The backend does the code exchange, validates the ID token, binds the result to the exact split, and only then records the approval and signs the proof the escrow checks. Needs `WORLD_AUTH_*` (without them the step-up routes answer 503 `NOT_CONFIGURED`). Implemented in code and covered by tests with doubles only: it has not run against the real issuer, because the auth.world.org client registration is blocked (see `docs/tracks/WORLD_AGENT_PASS.md` and `docs/WORLD_USER_TODO.md`). The AgentKit / AgentBook code (`agent.ts`, `identity.ts`) is NOT the official Agent Pass; it only attributes a proposal to a registered agent wallet, and no live AgentBook lookup was run. |

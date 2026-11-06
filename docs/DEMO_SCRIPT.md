@@ -1,23 +1,38 @@
-# Demo script (target 3:50, hard cap 4:00)
+# Demo script (target 3:25, hard cap 4:00)
 
-ETHGlobal rule: 2 to 4 minutes, 720p or better, no AI voiceover, not sped up. Anything over 4:00 is rejected. The timings below add up to 3:50. They are a plan and have not been rehearsed: time a real take and cut rows if it runs past 3:50. The old 4:30 / 5:00 targets were wrong.
+ETHGlobal rule: 2 to 4 minutes, 720p or better, no AI voiceover, not sped up. Anything over 4:00 is rejected. The rows below add up to 3:25, which leaves 35 s of slack. They are a plan and have not been rehearsed: time a real take and cut rows if it runs past 3:45. The old 4:30 / 5:00 targets were wrong.
 
 Setup before recording: `cd web && npm run db:local` (or a real Postgres), `npx prisma migrate deploy`, `npm run doctor`, then **stop anything else holding the single local DB connection** and seed: `node --env-file-if-exists=.env.local --env-file-if-exists=.env scripts/seed-demo.mjs --reset` (add `--ui-only` on a local DB to lay out screens without a chain), then `npm run dev`. Three browser profiles or sessions: Campaigner, Creator, Admin (admin wallet = a value from `ADMIN_WALLETS`). Be honest on camera about anything not exercised live (see the README status table). Never record with `NEXT_PUBLIC_DEMO=1`.
 
+## What can be shown live today
+
+| Segment | Can be shown live? | Why |
+| --- | --- | --- |
+| Arc: explorer, escrow, receiver, contract functions | Yes | Deployed on Arc testnet (`docs/CRE_DEPLOY.md`). |
+| CRE: terminal, explorer tx, site proof | Yes | Real Arc transaction `0xa41f91da…c8409`; the deployed site shows it. |
+| IDKit success and failure paths | **No, not yet** | `WORLD_ID_*` is not set on `clippo-cre.vercel.app`, and no real proof has run. Show it only after a live run; otherwise say it is integrated and tested with doubles. |
+| AI verdict, campaign wizard | **No, not on the deployed site** | No LLM key is configured there. Record it locally with `ANTHROPIC_API_KEY` or `GEMINI_API_KEY`, or leave it out. |
+| Step-up (Agent Pass) | **No, not yet** | Never run against the real `auth.world.org`. |
+| Claim | **No** | PerView credits wait out the 7-day retention window; no matured campaign exists. |
+
+Say plainly in the video what is simulated, seeded or not run. Do not show a step as working that answered 503.
+
+## Timeline (target 3:50)
+
 | Time | Screen | Say / do |
 | --- | --- | --- |
-| 0:00 | Landing | One line: brands fund a USDC pool, verified humans clip, AI checks, escrow on Arc pays, AI never moves money alone. (15 s) |
-| 0:15 | Arc Studio project (URL from checklist) then explorer | OPEN: Arc Studio has not been used and no project URL exists. If the project exists by recording time, show it and the deployed `ClippoEscrow`. If not, do not claim it: say the contract was written and tested in Foundry and show the explorer address that the app uses. The enforcing escrow is not deployed; say which address the app points to. (20 s) |
-| 0:35 | Campaigner: `/desk/new` wizard | Type an idea, press the buttons (YouTube, Pool/Per view, approver), accept the AI story (note `aiMode`). (20 s) |
-| 0:55 | `/desk/[id]/fund` | Fund the pool in USDC on Arc testnet through the wallet; show the fee range. Without `ESCROW_ADDRESS` the button refuses with a not-configured message: say so, do not fake it. Campaign shows pending admin. (20 s) |
-| 1:15 | Admin: queue | Approve the campaign. Mention reject refunds the full pool. (10 s) |
-| 1:25 | Creator: `/join` | Press verify, World sheet. Show one failure (Cancel), account still unverified, then Verify; account verified. Cut Expire and Reuse unless time allows. The World ID proof is a mocked fake identity, say so. (30 s) |
-| 1:55 | Creator: channel + submit | Verify channel (code in bio, real platform read). Submit a clip: AI verdict with reason. Open the seeded REJECT and NEEDS_HUMAN slips on `/slips/[id]`. Without an LLM key (`ANTHROPIC_API_KEY` or `GEMINI_API_KEY`, per `LLM_PROVIDER`) or without `YOUTUBE_API_KEY`, these calls answer 503 (the live site has no `YOUTUBE_API_KEY`): show the seeded verdicts instead and say so. (30 s) |
-| 2:25 | Admin or campaigner `/bench` | Resolve the NEEDS_HUMAN item by hand. (10 s) |
-| 2:35 | Campaigner `/desk` human split | Open a HUMAN_SPLIT campaign. The agent proposes the split. Click release: the Agent Pass step-up (OIDC redirect to auth.world.org). Cancel: show the "Split not approved" message. Verify: payouts created. Not proven: the step-up has never run against the real issuer or in a browser. If it still has not, say so and show the integration tests, not a live pass. (30 s) |
-| 3:05 | Terminal in `cre/` | `curl <backend>/api/snapshots/daily` (the feed the workflow reads), then `bash scripts/simulate-local.sh` (starts the local anvil fork and a mock feed), or replay `docs/tracks/cre-simulation-output.txt`; show the report written (or say simulation output if not broadcast). `npm run simulate:live` is an empty no-op, do not use it. It is a single-node simulation, nothing is on real Arc, and CRE reads Clippo's snapshot feed, not YouTube. Explain delta-only crediting. (20 s) |
-| 3:25 | Creator `/ledger` (claim) | Needs a matured campaign or HumanSplit; not proven. No live path exists yet: PerView credits are claimable only after the retention window (default 7 days), and close needs the deadline plus grace to have passed. On a fresh campaign Claim answers NothingToClaim and Close answers DeadlineNotReached. Either use a campaign that is already matured and closed, or show the ledger with the claimable amount and say the claim waits for the window. Do not click Claim on a fresh campaign (and not Close either). (15 s) |
-| 3:40 | Architecture diagram | Close on the diagrams in `docs/ARCHITECTURE.md` (current design) and the tracks. Do not show `docs/architecture.svg` until it is updated: it shows the older design. Ends at 3:50. (10 s) |
+| 0:00 | Landing | One line: brands fund a USDC pool, verified humans clip, an AI checks, Chainlink CRE confirms the views, the escrow on Arc pays. An agent never moves money alone. (15 s) |
+| 0:15 | Arc explorer: escrow `0x1e05…26Ef` and receiver `0x6b0f…C0cd` | USDC is the settlement and gas token. Name what the contract does: three payout modes, a 7-day retention window, on-chain disputes with automatic release, fee splits to a treasury, signed human approvals, one receiver for CRE reports (`docs/SUBMISSION_ARC.md`). **Arc Studio:** show it only if a project really holds this contract (open the URL on file first). If not, say the contracts were written and tested in Foundry and deployed with a forge script. (30 s) |
+| 0:45 | Architecture diagram `docs/architecture.svg` | Walk the money flow 1 to 8 in one breath. (15 s) |
+| 1:00 | IDKit on `/join` (only if run live) | State the trust moment: a creator gets paid real USDC, so one person must not farm campaigns with many accounts. Credential: Proof of Human is the minimum that gives per-human uniqueness. Press Cancel: the account stays unverified. Then verify: the account is verified and the wallet is linked on-chain. Say the prize proofs are mocked fake identities. If it has not run live, say "integrated and tested; not run live" and skip the clicks. (30 s) |
+| 1:30 | Local build only (needs an LLM key): submit a clip, AI verdict with the reason; open the seeded NEEDS_HUMAN and REJECT slips | Optional. Skip it if there is no key. (20 s) |
+| 1:50 | **CRE, screen 1: terminal** in `cre/` | Show the saved output (`docs/tracks/cre-simulation-real-arc.txt`) or run `bash scripts/simulate-arc-real.sh vWk4YV_dbsE UCIZw3qclbEDMa4TCFMAatww`. Point at four lines: `kept 1/1 clips`, `batch 1/1: receiver processed 1 rows, 0 failed`, and the `delivered … txs=0xa41f91da…` line. Cut the compile wait; do not speed it up. Say: "run with the official CRE command-line tool; a simulation, one node". (15 s) |
+| 2:05 | **CRE, screen 2: Arc explorer** | Open https://explorer.testnet.arc.io/tx/0xa41f91daf5431332ecaf1fbdfbf7f8ca13a38d39de8c41d0c1291f229f5c8409 : status success, the three events (`ViewsReported`, `CreatorCredited`, `ReportProcessed`). Say the escrow only accepts calls from that receiver. (15 s) |
+| 2:20 | **CRE, screen 3: the site** `https://clippo-cre.vercel.app/slips/cmw5jiz940005scec1r7rcyaz` | "Confirmed views: 3", the Chainlink badge, and the proof link: click it, it opens the same transaction. One hash in three places. Say the user, channel and campaign are seeded; the views, credit and proof are real. (15 s) |
+| 2:35 | Why CRE is core | Honest line: without CRE no view can be credited; Clippo's own count shows as "Pending" and is not paid. Say what is not done: not deployed on the CRE network, so the receiver is not locked. (15 s) |
+| 2:50 | Step-up on `/desk` (only if run live) | Agent proposes a split; the human step-up gates the release. Show Cancel: split not released. Skip if not run live. (20 s) |
+| 3:10 | Close | Repo, the three tracks, and what is open. (15 s) |
+| 3:25 | Slack | Leave it empty. The hard cap is 4:00. |
 
 Click path summary: `/desk/new` -> `/desk/[id]/fund` -> (admin) `/bench` approve -> (creator) `/join` -> `/wire` browse and submit -> `/slips/[id]` verdict and appeal -> `/desk` split -> `/ledger` claim -> close.
 

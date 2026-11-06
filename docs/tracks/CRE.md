@@ -1,137 +1,195 @@
 # Track: Chainlink CRE ("Best workflow with CRE", $1,500, ETHGlobal Mumbai)
 
-Owner dir: `cre/` (plus `web/scripts/freeze-snapshot.mjs` and `web/src/app/api/snapshots/{clips,daily}`). Researched and built 2026-10-28; workflow v1 simulation output captured 2026-11-06 (after commit 6f74f7b); workflow v2, the real Arc deployment and the real-Arc simulation 2026-11-07.
+Canonical track document. Status date: 2026-11-07. Code: `cre/` (workflow), `contracts/src/ClippoReportReceiver.sol` and `ClippoEscrow.sol` (chain side), `web/` (manifest, indexer, Confirmed views). Developer notes: `cre/README.md`. Plan, scope and deploy runbook (written before the work, now with status banners): `docs/CRE_PLAN.md`, `docs/CRE_SCOPE.md`, `docs/CRE_DEPLOY.md`.
 
-## Status on 2026-11-07 (read this first)
+## 1. Summary
 
-- Workflow v2 (commit `d954f67`): each node fetches the clip manifest (`/api/snapshots/clips`), then reads the YouTube Data API itself (`videos.list`, `channels.list`). A clip is kept only if its video is on the manifest's channel and the channel bio holds `clippo:<wallet>`. View counts go through `median` consensus. Clippo only says which clips to check; it does not supply view counts.
-- Run on REAL Arc (2026-11-07, `cre workflow simulate --target production-settings --broadcast`, CLI v1.39.0, real YouTube read): tx `0xa41f91daf5431332ecaf1fbdfbf7f8ca13a38d39de8c41d0c1291f229f5c8409` (block 71094857, success), from our simulation wallet `0x7149…01F6` to Arc's Chainlink simulation forwarder `0x6E9E…eDc1`. Escrow `0x1e05373c199D764f7dE0353d58AFEa2b4C6326Ef`, campaign 1: `reportedViews` 3 and `credited` 30000 units (0.03 USDC), checked with an independent `cast call`. Output: `docs/tracks/cre-simulation-real-arc.txt`. Explorer: https://explorer.testnet.arc.io/tx/0xa41f91daf5431332ecaf1fbdfbf7f8ca13a38d39de8c41d0c1291f229f5c8409
-- Also run: the same real YouTube read delivered on a local anvil fork of Arc (`docs/tracks/cre-simulation-real-youtube.txt`), and the earlier v1 runs on a local fork with a mock feed (`docs/tracks/cre-simulation-output.txt`, when the workflow read Clippo's `/api/snapshots/daily`).
-- Not done: this is a SIMULATION. The simulator is single-node, so no real multi-node consensus ran; our own wallet sent the report through Arc's Chainlink TEST forwarder, so no DON signatures were shown. The receiver is in simulation mode (`workflowCheckSkipped` true, not locked). No workflow is deployed (needs Early Access). The manifest in the real-Arc run came from a local mock backend: the deployed backend lists a clip only after its approval day has finished (UTC), so its `/api/snapshots/clips` is empty until then. The demo creator's human registration is an attestor-signed stand-in for the World check.
-- Data source: YouTube, read by the nodes. The YouTube key is the CRE secret `YOUTUBE_API_KEY` (sent in a header, never logged); it is also set on the deployed site for its own polling.
-- Escrow on Arc: the enforcing escrow `0x1e05…26Ef` and receiver `0x6b0f6C0f324C615Add6BfcA5EE0b8eeD66F2C0cd` were deployed on 2026-11-07 in simulation mode (`docs/CRE_DEPLOY.md`). `config.production.json` now holds that receiver and `backendUrl` https://clippo-cre.vercel.app. The two older escrows (`0xd845…c39c`, `0xc7b9…e310`) have no `humanAttestor` and do not enforce the CRE-only path.
-- In the app: Confirmed (read by CRE, written on Arc) vs Pending (Clippo's own count) views with a proof link. The deployed site https://clippo-cre.vercel.app shows Confirmed views 3 and the proof link for campaign 1 (deployed by the Vercel CLI from the feature branch; it will be redeployed from `main` after the merge).
-- Trust claim, stated honestly: the contract design makes `reportViews` callable only by the one-time-set `reportAdapter` (the receiver), and the receiver accepts only the forwarder (plus the expected workflow owner outside simulation). That is what the code and tests show, and the runs exercised it with the simulation forwarder. A trust-minimised multi-node DON signing the report is not demonstrated.
+Clippo pays creators from a USDC pool in an escrow on Arc, per view. Who says how many views a clip has? A Chainlink CRE workflow. The nodes fetch the list of clips to check from Clippo (`GET /api/snapshots/clips`), then read the view counts from the YouTube Data API themselves (the API key is a CRE secret). A node keeps a clip only if the channel bio holds `clippo:<creator wallet>`, so the channel is publicly tied to the wallet. The nodes take the median view count per clip and send one signed report to `ClippoReportReceiver`, which calls `ClippoEscrow.reportViews`. The escrow credits views only when the call comes from that receiver, which was set once as `reportAdapter`. The app shows "Confirmed views" (read from the chain) with a link to the report transaction.
 
-## Prize requirements (source: https://ethglobal.com/events/mumbai/prizes, "Best workflow with CRE", $1,500; page read 2026-11-06 and verified live)
+Status in one line: the workflow ran as a CRE CLI simulation with `--broadcast` on real Arc and credited a creator. It is NOT deployed on the CRE network (deploy access is not enabled for our account), so the receiver is still in simulation mode and not locked.
 
-> Goal: Build, simulate, or deploy a CRE Workflow that's used as an orchestration layer within your project. Note : It is NOT mandatory to deploy it during the hackathon, simulation is enough!
-> Your workflow should: Integrate at least one blockchain with an external API, system, data source, LLM, or AI agent. Demonstrate a successful simulation (via the CRE CLI) or a live deployment on the CRE network. Be meaningfully used in your project.
+## 2. Prize requirements and evidence
 
-A separate "Best use of Chainlink CCIP 2.0" ($3,500) prize exists and is not targeted. The page lists no separate judging criteria. Video rule (2 to 4 minutes, hard cap 4:00): see `docs/DEMO_SCRIPT.md`. So the proof judges need is `cre workflow simulate` output (or a live deployment): `docs/tracks/cre-simulation-real-arc.txt` holds the real CLI output on real Arc, `docs/tracks/cre-simulation-real-youtube.txt` and `cre-simulation-output.txt` the local-fork runs. `scripts/capture-evidence.sh` (emulation) is separate supporting evidence, NOT the CLI simulation.
+Prize text (https://ethglobal.com/events/mumbai/prizes, "Best workflow with CRE", $1,500; read 2026-11-06, live): "Build, simulate, or deploy a CRE Workflow that's used as an orchestration layer within your project. It is NOT mandatory to deploy it during the hackathon, simulation is enough." The page lists no other judging criteria. CRE docs: https://docs.chain.link/cre. Templates: https://github.com/smartcontractkit/cre-templates/. A separate CCIP prize ($3,500) is not targeted.
 
-## Current CRE facts (docs.chain.link/cre, fetched 2026-10-28)
-
-| Item | Finding |
-| --- | --- |
-| CLI | `cre` v1.39.0. Windows native: `irm https://app.chain.link/cre/install.ps1 \| iex`, or the zip from https://github.com/smartcontractkit/cre-cli/releases (verify checksum). |
-| Verified locally | Downloaded `cre_windows_amd64.zip` v1.39.0, SHA-256 `bce12d90866edf6125664129e1b241f98c823ef577ed6530232053bdf1b86c64` matches the GitHub release digest. `cre version` runs. |
-| Runtime deps | Bun >= 1.2.21 (SDK compiles with bun + Javy to WASM). bun 1.4.4 installed via npm in a scratch dir. |
-| TS SDK | `@chainlink/cre-sdk` 1.23.0 (latest on npm; already in `cre/package.json`). |
-| Account | Free account at https://app.chain.link/cre. **`cre init` and `cre workflow simulate` both refuse to run unless logged in (`cre login`, browser + 2FA) or `CRE_API_KEY` is set.** Observed on 2026-10-28 (before login): both aborted with "Authentication required". |
-| Deploy | `cre workflow deploy` needs Early Access deploy approval (`cre account access` or https://cre.chain.link/request-access); not required for the prize. Simulation does not need it. |
-| Arc support | **Arc Testnet is supported** (chain name `arc-testnet`, in SDK 1.23 selectors). Forwarders (https://docs.chain.link/cre/guides/workflow/using-evm-client/supported-networks-ts): simulation MockKeystoneForwarder `0x6E9EE680ef59ef64Aa8C7371279c27E496b5eDc1`, production KeystoneForwarder `0x76c9cf548b4179F8901cda1f8623568b58215E62`. Docs: confirm tenant availability with `cre workflow supported-chains` after login. |
-| Sim flags | `cre workflow simulate <workflow-name-or-path> --target <target> [--broadcast] [--non-interactive --trigger-index N] [--http-payload '<json>|<file>']`; `cre login` is required even for simulate (browser; `CRE_API_KEY` only for approved deploy access); `CRE_ETH_PRIVATE_KEY` in `.env` for writes; without `--broadcast` it is a dry run (empty tx hash `0x`). Bun >= 1.2.21 for TS workflows. |
-| Config shape | `project.yaml`: `<target>: { rpcs: [{chain-name, url}] }` (`account.workflow-owner-address` is multisig-only/optional). `workflow.yaml`: `<target>: { user-workflow.workflow-name, workflow-artifacts.{workflow-path,config-path,secrets-path} }`. |
-| Consensus | `consensusMedianAggregation`, `consensusIdenticalAggregation`, `consensusCommonPrefixAggregation`, `ConsensusAggregationByFields({field: median/identical/commonPrefix/ignore})`. |
-| Write path | `runtime.report({encodedPayload, encoderName:"evm", signingAlgo:"ecdsa", hashingAlgo:"keccak256"})` then `EVMClient.writeReport(runtime,{receiver, report, gasConfig})`; the forwarder calls `IReceiver.onReport(metadata, report)`. Check both `txStatus` and `receiverContractExecutionStatus`. |
-| Triggers | Cron (6-field) and HTTP (`authorizedKeys` required for deployed workflows; none for simulation). One HTTP handler max per workflow. |
-
-Doc caveat: the simulate docs say the simulator's mock forwarder "doesn't call your onReport()". We tested the Arc mock forwarder on-chain (anvil fork): it DOES call `onReport` and the escrow credits. The CLI (`simulate --broadcast`, v1.39.0) also sends a real transaction to that forwarder, and the escrow credits (see `cre-simulation-output.txt`). The forwarder swallows an `onReport` revert: the tx still succeeds and `writeReport` reports SUCCESS, so `main.ts` also requires the receiver's `ReportProcessed` event in the receipt.
-
-## Requirement checklist
-
-| # | Requirement | Source | Status |
+| # | Requirement | How we meet it | Evidence |
 | --- | --- | --- | --- |
-| 1 | Workflow connects a blockchain to an external data source | Prize page (verified 2026-11-06) | DONE in code and run once on real Arc: each node reads the YouTube Data API v3 for the clips in Clippo's `/api/snapshots/clips` manifest, then EVM `writeReport` to Arc. The real-Arc write was a simulation (tx `0xa41f…c8409`) |
-| 2 | Successful simulation via CRE CLI OR live deployment | Prize page (verified 2026-11-06) | **DONE by simulation, single-node**: `--broadcast` on REAL Arc with the real YouTube read (`docs/tracks/cre-simulation-real-arc.txt`); also a real YouTube read on a local anvil fork (`cre-simulation-real-youtube.txt`) and the earlier v1 fork run (`cre-simulation-output.txt`). No live deployment. Reproduce: `bash scripts/simulate-arc-real.sh <videoId> <channelId>` (real Arc) or `bash scripts/simulate-local.sh` (local fork) |
-| 3 | Meaningfully used in the project | Prize page, PRD 6.1 | DONE: replaces the admin wallet writing view counts. On the deployed escrow `0x1e05…26Ef` the receiver is the one-time `reportAdapter`, so only it can call `reportViews`, and the app shows the CRE-confirmed views with a proof link. Caveat: the run on real Arc is a simulation (our wallet sent the report through the test forwarder) and no workflow is deployed |
-| 4 | Workflow compiles with the CLI toolchain | CRE SDK | VERIFIED: `cre-compile` (typecheck, runtime-compat check, Javy WASM, 2.5 MB for v1; 2.6 MB for v2 per `docs/BUILD_LOG.md`) passes with bun 1.4.4 |
-| 5 | project.yaml / workflow.yaml match canonical format | CRE docs | DONE from docs; `cre init` was not run, so project.yaml / workflow.yaml are not diffed against init output |
-| 6 | Consensus across nodes | PRD 6.1 step 2 | CODED (v2): the manifest hash and the kept-clip set are `identical`, the per-clip view counts use `median`; the backend serves an immutable completed-day manifest. NOT proven: the simulator runs one node, so consensus never saw disagreement |
-| 7 | Report via forwarder to `IReceiver`; escrow credits only new views within pool cap | PRD 6.1 step 3 | VERIFIED by `cre workflow simulate --broadcast` on REAL Arc testnet through the Arc MockKeystoneForwarder (tx `0xa41f…c8409`, campaign 1 credited 0.03 USDC) and earlier on a local anvil fork against fresh local deploys (evidence below). The production KeystoneForwarder was not used |
-| 8 | Empty feed, large batch, replay, staleness | task | Saved v1 CLI output (`cre-simulation-output.txt`, not re-run for v2) covers: empty feed no-op (live), replay credits 0, unlinked creator fails with `NotHuman`. For v2, `docs/BUILD_LOG.md` records a local-fork run where 3 of 5 manifest clips were kept (2 dropped with a logged reason), a replay credited nothing more and an unlinked wallet failed with `NotHuman` (the log's claim; that output is not saved in `docs/tracks`). Not shown by the CLI: 60 rows into 3 reports of 25 and stale day rejected (only the CLI-free emulation script earlier) |
-| 9 | HTTP trigger in addition to cron | task | DONE (trigger index 1, optional `{"day":"YYYY-MM-DD"}`); simulated with `--http-payload '{}'` in the v1 run, the `day` option not simulated; the real-Arc run used trigger index 0 |
-| 10 | Backend freeze of one manifest per day | PRD 6.1 step 1 | DONE (below): `GET /api/snapshots/clips` (the manifest) and `GET /api/snapshots/daily` are frozen per UTC day. The deployed site's manifest is empty until the seeded approval day ends (UTC), so no run has used it yet |
-| 11 | Live deployment on Arc testnet | optional | PARTLY: the enforcing escrow and receiver are deployed on real Arc in simulation mode (`0x1e05…26Ef`, `0x6b0f…C0cd`) and `config.production.json` has the receiver. The workflow itself is NOT deployed (needs Early Access) |
-| 12 | Campaign id gap (DB cuid vs on-chain uint256) | ARCHITECTURE.md | Closed in code (commit 292d107): the feed and the manifest emit the numeric on-chain id as `campaignId` and skip campaigns with no `onchainId` (`web/src/lib/snapshots.ts`). The real-Arc run used on-chain campaign 1 with a manifest from a local mock backend, so the deployed backend's manifest has not fed a workflow run |
+| 1 | Integrate at least one blockchain with an external API, system, data source, LLM or AI agent | Blockchain: Arc testnet (`arc-testnet`), written through `EVMClient.writeReport`. External systems: Clippo's manifest API and the YouTube Data API v3 (`videos.list`, `channels.list`). Code: `cre/workflows/clippo-settlement/main.ts` (`fetchManifest`, `youtubeGet`, `readYoutube`, `settle`), `youtube.ts` (`videosUrl`, `channelsUrl`, `evaluateClips`) | Real run on Arc: "youtube agreed: kept 1/1 clips", 1 report, tx `0xa41f91da...c8409`. `docs/tracks/cre-simulation-real-arc.txt` |
+| 2 | Successful simulation via the CRE CLI, or a live deployment | Simulation: `cre workflow simulate --target production-settings --broadcast`, CLI v1.39.0, real Arc, real YouTube read. Result string: `delivered day=2026-11-05 rows=1 reports=1 failedRows=0 unconfirmedBatches=0`. Live deployment: not done | `docs/tracks/cre-simulation-real-arc.txt` (raw CLI output, no key in it). Independent `cast` reads of the escrow and the transaction |
+| 3 | Meaningfully used in the project | The workflow is the only path that credits views: `ClippoEscrow.reportViews` reverts `NotAdapter` unless `msg.sender == reportAdapter`, and `setReportAdapter` can be set once. On the deployed escrow `reportAdapter` is the receiver. The app shows the chain's numbers as Confirmed views with a proof link. See section 3 for the honest limits | Escrow `0x1e05373c199D764f7dE0353d58AFEa2b4C6326Ef` `reportAdapter()` = receiver `0x6b0f6C0f324C615Add6BfcA5EE0b8eeD66F2C0cd` (read from Arc). Deployed page, section 4 |
 
-## What was built
+## 3. Is it core? (honest answer)
 
-- `cre/workflows/clippo-settlement/main.ts` (v2): handler 0 = cron (daily 00:30 UTC), handler 1 = HTTP. Each node fetches the clip manifest `{day, hash, clips:[{campaignId, creator, videoId, channelId}]}` from `/api/snapshots/clips`, then reads the YouTube Data API itself (`youtube.ts`: `videos.list`, `channels.list`; key from the CRE secret `YOUTUBE_API_KEY`, sent in the `x-goog-api-key` header only). A clip is kept only if its video is on the manifest's channel and the channel bio holds `clippo:<wallet>`. Consensus: the manifest hash and the kept-clip set are `identical`, view counts use `median`, so divergence fails consensus instead of being signed. After consensus: staleness guard (`maxStalenessDays`, default 2, DON time `runtime.now()`), empty manifest is a no-op, rows chunked by `maxRowsPerReport` (25), one signed report per chunk, `txStatus` and `receiverContractExecutionStatus` both checked, then the receipt is read: a missing `ReportProcessed` fails the run, and rows the receiver swallowed (`ItemFailed`) are logged with their reason and counted as `failedRows` (the run still exits 0). A zero `receiverAddress` is refused only once there are rows to deliver. (`snapshot.ts` still validates, canonicalises and ABI-encodes the rows.)
-- Replay safety: `ClippoEscrow.reportViews` ignores `cumulativeViews <= last`, so re-sending a day credits 0 (shown).
-- Backend (additive only): `web/src/lib/snapshots.ts` gains `frozenSnapshot(day)`, `buildFrozenSnapshot`, `previousDay`, and an optional `asOfDay` arg on `latestPerSubmission`/`latestSnapshots`. `GET /api/snapshots/daily[?day=YYYY-MM-DD]` returns `{day, hash (sha256), rows}` with `ETag`; default is yesterday (UTC), a completed day that `refreshSnapshots` no longer writes to; 400 for invalid or incomplete days. `GET /api/snapshots/latest` untouched. Added for v2: `GET /api/snapshots/clips[?day=...]`, the manifest (approved, live, verdict-approved clips of PerView and PoolShare campaigns with a verified wallet-bound channel code `clippo:<wallet>`, no view counts, frozen per UTC day; a clip appears only after its approval day has finished), `POST /api/channels/:id/upgrade-code` to re-verify old-format channels, an indexer for `ViewsReported`, and the Confirmed vs Pending display (`web/src/components/ConfirmedViews.tsx`).
-- `web/scripts/freeze-snapshot.mjs`: `BACKEND_URL=... CRON_SECRET=... node scripts/freeze-snapshot.mjs [--day D] [--out f.json]` refreshes, then fetches/saves the frozen day. Schedule at about 00:10 UTC, before the CRE cron.
-- `cre/scripts/`: `mock-backend.mjs` (shared fixture in the real envelope, also serves the manifest and a fake YouTube API; modes fixture, empty, stale, large, bump, unlinked, realyt), `arc-deploy.sh` (deploys the escrow and receiver to real Arc in simulation mode, `docs/CRE_DEPLOY.md`), `simulate-arc-real.sh` (the real-Arc `--broadcast` run), `simulate-real-youtube.sh` (real YouTube read on a local fork), `local-chain.sh` (anvil-fork deploy using the contracts' `DeployMock.s.sol` and `Deploy.s.sol`, seeds campaigns 1..12, approves 7 and 12, links the fixture creators with `registerHuman` signed by a local attestor, patches `receiverAddress`), `simulate-local.sh` (the real `cre workflow simulate` run), `emulate-delivery.mts` and `capture-evidence.sh` (CLI-free evidence).
-- Tests: `docs/BUILD_LOG.md` records `cd cre && npm test` 22 pass (9 old, 13 new) and a clean typecheck at commit `d954f67`. That is the log's claim, not re-run for this doc after the merge.
+Short answer: a strong feature, not something the product cannot exist without.
 
-## Evidence
+**Removal test.** Take CRE out and nobody can call `reportViews`: PerView and PoolShare campaigns credit no one, and the Confirmed number stays at 0. So the money path depends on it. But the contract does not force CRE by itself: `ClippoEscrow.setReportAdapter(address)` accepts any address once. An escrow deployed with one server key as adapter would work the same, with a key to trust. The CRE-only property comes from how we deployed it, not from the contract type. HumanSplit campaigns do not use CRE at all.
 
-Real Arc, workflow v2 (real CLI output: `docs/tracks/cre-simulation-real-arc.txt`, captured 2026-11-07 with `cre/scripts/simulate-arc-real.sh`): channel @visualsbyanii, video `vWk4YV_dbsE`, creator wallet `0x8CF9…60e5`, campaign 1 on escrow `0x1e05…26Ef`, receiver `0x6b0f…C0cd`. Manifest: one real clip served by a local mock backend. YouTube: the real Data API. Result: "youtube agreed: kept 1/1 clips", 1 report, 0 failed rows, tx `0xa41f91daf5431332ecaf1fbdfbf7f8ca13a38d39de8c41d0c1291f229f5c8409` (block 71094857). On-chain read afterwards: `reportedViews` 3 (the video's real count at that time), `credited` 30000 units = 0.03 USDC at $10 per 1,000 views. One CRE node; our own wallet sent the report through Arc's test forwarder.
+**Three layers.** Each one makes CRE harder to remove.
 
-Local fork, workflow v2 (`docs/tracks/cre-simulation-real-youtube.txt`): the same real YouTube read delivered on a local anvil fork with fresh contracts; `reportedViews` 3.
+| Layer | What it means | Status | Where in the code |
+| --- | --- | --- | --- |
+| Truth | Nodes read YouTube themselves and check the channel bio. Clippo supplies no view counts. | Built. Ran once on a single simulated node with the real YouTube API | `main.ts` `readYoutube`, `observationAggregation`; `youtube.ts` `evaluateClips`, `bioHasCode`; `web/src/lib/clip-manifest.ts` `frozenClipManifest` (no counts in it); `web/src/lib/channel-code.ts` `channelCodeFor` |
+| Visible | The app shows "Confirmed views" from the chain, with a Chainlink badge and a proof link. Clippo's own YouTube poll shows only as "Pending". | Built. Shown on the deployed site | `web/src/lib/chain/indexer.ts` (`ViewsReported` case writes a `ViewsReport` row); `web/src/lib/confirmed.ts` (`foldReports`, `confirmedForCampaign`, `withPending`); `web/src/components/ConfirmedViews.tsx`; `SlipDetail.tsx`; `GET /api/campaigns/:id` field `performance` |
+| Immutable | After a workflow deploy: pin the workflow id on the receiver and lock it, so nobody can swap the reporter or the logic. | **NOT done.** Needs a deployed workflow, and deploy access is not enabled. On Arc now: `workflowCheckSkipped` true, `configLocked` false, `expectedWorkflowId` 0x00 (read from the chain) | `ClippoReportReceiver.sol` `setExpectedWorkflowId`, `setWorkflowCheckSkipped`, `lockConfig` (reverts `CannotLockWhileSkipping` while the skip flag is on) |
 
-Earlier workflow v1 (real CLI output: `docs/tracks/cre-simulation-output.txt`; the workflow then read Clippo's `/api/snapshots/daily`; not re-run for v2):
+**What a judge can fairly point out.**
 
-Local anvil fork of Arc testnet (the real Arc MockKeystoneForwarder is present in the fork), mock fixture feed (not real Clippo or YouTube data), rate $10 per 1k views, campaign 7 funded $500, campaign 12 funded $1 (the 25 bps campaigner fee is taken at funding, so its pool is 0.9975):
+- Today the "DON" is us. In simulation mode `ClippoReportReceiver.onReport` accepts only the forwarder, and then only when `tx.origin` is `expectedWorkflowOwner`, our simulation wallet `0x7149dCB8f568794c7bed1a3Bd90A6f397EeF01F6`. Nothing here shows Chainlink nodes signing.
+- Clippo still decides which clips qualify (brand, AI verdict, admin approval, wallet-bound channel code). The workflow reads YouTube for those clips only.
+- Bot views on YouTube still count. The workflow reports what YouTube shows.
+- Chain data is per (campaign, creator), not per clip, so Confirmed views are shown per creator and campaign.
 
-- First delivery: campaign 7 `0x1111...` 1200 views = 12.000000 USDC; `0xABcd...` 300 views = 3.000000; campaign 12 `0xABcd...` 5000 views would be $50 but is credited 0.997500 (pool cap).
-- Replay: on-chain values unchanged. Unlinked creator: row logged as failed with `NotHuman()`, the other rows unaffected. Live feed on `production-settings` (no broadcast): "no-op: empty snapshot".
-- Not in the saved CLI output and not re-run on 2026-11-06: bump +100 views (credits only the delta), stale day, 60 rows into 3 reports of 25, wrong simulation key, zero receiver with rows. Earlier versions of these scenarios were checked with the CLI-free emulation script (`emulate-delivery.mts`), not `cre workflow simulate`. Treat them as not proven by the CLI.
+**Score** (our own 1 to 5 scale from `docs/CRE_PLAN.md` section 3b): Truth + Visible = 3, a strong feature. Adding Immutable on a deployed workflow would make it 4. It is never 5, because of the points above. Without deploy access we stop at 3.
 
-## Reproduce
+## 4. Evidence
+
+| What | Result | Where |
+| --- | --- | --- |
+| Real Arc simulation (the headline) | `cre workflow simulate --target production-settings --broadcast`, CLI v1.39.0. Manifest from a LOCAL mock backend with one real clip. YouTube: the REAL Data API (channel @visualsbyanii `UCIZw3qclbEDMa4TCFMAatww`, video `vWk4YV_dbsE`). "kept 1/1 clips", 1 report, 0 failed rows | `docs/tracks/cre-simulation-real-arc.txt` |
+| The transaction | `0xa41f91daf5431332ecaf1fbdfbf7f8ca13a38d39de8c41d0c1291f229f5c8409`, block 71094857, status success. From the simulation wallet `0x7149...01F6` to Arc's Chainlink simulation forwarder `0x6E9EE680ef59ef64Aa8C7371279c27E496b5eDc1`. Four logs: `CreatorCredited` and `ViewsReported` (escrow), `ReportProcessed` (receiver), the forwarder's own event (the logs are from `docs/BUILD_LOG.md` entry 18). `from`, `to`, block and status re-read from Arc with `cast` | https://explorer.testnet.arc.io/tx/0xa41f91daf5431332ecaf1fbdfbf7f8ca13a38d39de8c41d0c1291f229f5c8409 |
+| On-chain result | Escrow `reportedViews(1, 0x8CF9113b19Aa9D169365CA7B1BB9d7b957B460e5)` = 3, `credited` = 30000 units = 0.03 USDC at $10 per 1,000 views (re-read with `cast call`) | Escrow `0x1e05373c199D764f7dE0353d58AFEa2b4C6326Ef`, receiver `0x6b0f6C0f324C615Add6BfcA5EE0b8eeD66F2C0cd` (simulation mode), campaign 1 |
+| Contracts on Arc | Creation txs and deploy block 71094327 are recorded in `docs/BUILD_LOG.md` entry 17 (escrow `0xc65b42e4...5ba03`, receiver `0x4d136993...2e522`) | `cre/scripts/arc-deploy.sh` |
+| Local fork, real YouTube | Same real YouTube read delivered on a local anvil fork of Arc; `reportedViews` 3 | `docs/tracks/cre-simulation-real-youtube.txt` |
+| Local fork, earlier v1 | Workflow v1 (read Clippo's `/api/snapshots/daily`): first delivery credits, replay credits 0, unlinked creator fails with `NotHuman()`, live empty feed is a no-op, pool cap holds | `docs/tracks/cre-simulation-output.txt` |
+| Fork end to end | CRE `--broadcast` on a local fork -> real indexer (`syncChain`) -> API -> browser. 14 of 14 browser checks passed (`docs/BUILD_LOG.md` entry 14) | `web/scripts/e2e-confirmed-ui.mjs`; test `web/src/lib/chain/confirmed-views.e2e.test.ts` (runs only with `E2E_CRE_FORK=1`) |
+| Tests | CRE: typecheck clean, 26 tests pass (13 in `snapshot.test.ts`, 13 in `youtube.test.ts`), compiles to WASM (2.6 MB). Web: 325 passed, 1 skipped (the gated fork test). Foundry: 114 passed (`ClippoReportReceiver.t.sol` covers the forwarder, owner, id, name, skip flag and lock) | Run on the merged tree (`docs/BUILD_LOG.md` entry 21); not re-run for this doc |
+| Deployed page | https://clippo-cre.vercel.app (main `ab35b35`, Vercel CLI upload, Neon database). `GET /api/campaigns/cmw5jiz940005scec1r7rcyaz` returns `performance.confirmedViews` 3, `pendingViews` 0, and `proof.txHash` = the transaction above (re-read with curl). The page `/slips/cmw5jiz940005scec1r7rcyaz` shows "Confirmed views, all creators: 3", the Chainlink badge and the proof link (checked in a browser earlier; the page is client-rendered, not re-checked with curl) | Records behind the page (user, channel, campaign, clip, approval) are SEEDED and labelled `[SEED]` by `web/scripts/seed-cre-demo.mjs`. Views, credit and proof are real |
+
+Time note: the site's API gives the report block time as 2026-11-06 21:56:24 UTC. The CLI log lines in the evidence files are labelled `Z` but are 5 h 30 min ahead of that, so they are local time (IST) and the run is 2026-11-07 local.
+
+## 5. The 3-screen demo (one tx hash in three places)
+
+Say it plainly: this is a simulation, one node, our wallet sent the report through Chainlink's test forwarder.
+
+**Screen 1: terminal.** Show the CLI output ending in the tx hash.
+
+```
+cd cre
+cat ../docs/tracks/cre-simulation-real-arc.txt      # the saved real output of the run
+# or run it live (needs scripts/.arc-deploy.env, cre/.env with a funded simulation wallet and the YouTube key, and `cre login`):
+bash scripts/simulate-arc-real.sh vWk4YV_dbsE UCIZw3qclbEDMa4TCFMAatww
+```
+
+Point at: `youtube agreed: kept 1/1 clips`, `receiver processed 1 rows, 0 failed`, the `delivered ... txs=0xa41f91da...` line, and the last line `reportedViews=3 credited(...)=30000`. A live re-run sends a NEW transaction. The escrow credits only growth, so with no new views it credits 0, and the site's proof link would still show the old hash (from `foldReports`: the proof is the latest report that added views; not tried). To keep the same hash in all three places, replay the saved output.
+
+**Screen 2: Arc explorer.** Open https://explorer.testnet.arc.io/tx/0xa41f91daf5431332ecaf1fbdfbf7f8ca13a38d39de8c41d0c1291f229f5c8409. Show: success, block 71094857, from `0x7149...01F6`, to the Chainlink simulation forwarder `0x6E9E...eDc1`, and the `ViewsReported` and `CreatorCredited` logs.
+
+**Screen 3: the site.** Open https://clippo-cre.vercel.app/slips/cmw5jiz940005scec1r7rcyaz. Show "Confirmed views, all creators: 3", the Chainlink badge, and the proof link `Proof 0xa41f91...8409`. Click it: it opens the same explorer page. Optional, in the terminal: `curl -s https://clippo-cre.vercel.app/api/campaigns/cmw5jiz940005scec1r7rcyaz` and point at `performance.proof.txHash`. Say that the campaign, clip and approval rows are seeded and labelled `[SEED]`, while the views, the credit and the proof come from the chain.
+
+## 6. How to reproduce
+
+Needs: the CRE CLI (`cre login` done, even for simulation), Bun >= 1.2.21, Foundry, Node 22+. Never commit keys: `CRE_ETH_PRIVATE_KEY` and `YOUTUBE_API_KEY_CRE` live in the git-ignored `cre/.env` (`cre/.env.example` shows the names).
 
 ```
 cd cre && npm install
-# REAL Arc (needs the deployed addresses from scripts/arc-deploy.sh, a funded simulation wallet in cre/.env, a YouTube key, and `cre login` done)
-bash scripts/simulate-arc-real.sh <videoId> <channelId>
-# local fork simulation (needs cre, bun, foundry, and `cre login` done)
+npm run typecheck                    # tsc --noEmit
+npm test                             # snapshot.test.ts + youtube.test.ts (26 tests)
+npm run compile                      # cre-compile to dist/clippo-settlement.wasm
+
+# 1. Local anvil fork of Arc + mock backend + fake YouTube API (no real keys, nothing on real Arc)
 bash scripts/simulate-local.sh
-# production config, no broadcast (not run for v2; the deployed manifest is empty until the seeded approval day ends, UTC)
+
+# 2. REAL YouTube read, delivered on a local fork
+bash scripts/simulate-real-youtube.sh <creator wallet> <video id> <channel id> [campaign id]
+
+# 3. REAL Arc testnet with --broadcast, REAL YouTube (the headline run)
+bash scripts/arc-deploy.sh           # the owner runs it: asks for the admin key (hidden); deploys escrow + receiver in simulation mode
+bash scripts/simulate-arc-real.sh vWk4YV_dbsE UCIZw3qclbEDMa4TCFMAatww
+
+# 4. Production config, no broadcast (not run for v2; the deployed manifest is empty today, so a no-op is expected)
 npm run simulate:live
-# CLI-free supporting evidence (needs foundry + node 22+; do not redirect it into cre-simulation-output.txt)
+
+# 5. Deployed manifest feeding the workflow (NOT run yet): once UTC day 2026-11-06 has ended the seeded clip should be listed
+#    (not checked). Needs cre/.env with the simulation wallet key and the YouTube key.
+cre workflow simulate ./workflows/clippo-settlement --target production-settings --non-interactive --trigger-index 0 --broadcast
+
+# CLI-free supporting evidence (NOT the CLI simulation; do not redirect it into cre-simulation-output.txt)
 bash scripts/capture-evidence.sh
-# manual equivalent:
-#   anvil --fork-url https://rpc.testnet.arc.io --port 8545 --chain-id 5042002
-#   bash scripts/local-chain.sh; set -a; source scripts/.local-chain.env; set +a
-#   node scripts/mock-backend.mjs &
-#   cre workflow simulate ./workflows/clippo-settlement --target staging-settings --non-interactive --trigger-index 0 --broadcast
-#   cre workflow simulate ./workflows/clippo-settlement --target staging-settings --non-interactive --trigger-index 1 --http-payload '{}' --broadcast
 ```
 
-The local `CRE_ETH_PRIVATE_KEY` is the public anvil account #0 key and the local attestor is public anvil account #1 (no value on any real network). `local-chain.sh` rewrites `receiverAddress` in `config.staging.json` on each run.
+App side:
 
-## Live path on Arc testnet (supported)
+```
+cd web && npm test                                              # 325 passed, 1 skipped
+node scripts/seed-cre-demo.mjs [--confirm] [--retire-old]       # seeds the demo rows (dry run without --confirm)
+# fork end to end: see the header of web/src/lib/chain/confirmed-views.e2e.test.ts (E2E_CRE_FORK=1) and web/scripts/e2e-confirmed-ui.mjs
+cd ../contracts && forge test                                   # 114 passed
+```
 
-1. DONE 2026-11-07: contracts deployed to real Arc in simulation mode with `bash scripts/arc-deploy.sh` (`docs/CRE_DEPLOY.md`): forwarder = Arc's simulation forwarder, workflow owner = the simulation wallet, `HUMAN_ATTESTOR_ADDRESS` set. Creators must be linked with `registerHuman` or their rows fail `NotHuman` (the demo creator was linked by an attestor-signed script). One `simulate --broadcast` against it is done (above).
-2. `cre login`; `cre account access` (Early Access) until `cre whoami` shows deploy access. `cre whoami` showed "Deploy Access: Not enabled" when last checked (`docs/BUILD_LOG.md`).
-3. DONE: the public backend URL (`backendUrl` https://clippo-cre.vercel.app) and the receiver (`evm.receiverAddress`) are in `config.production.json`; `scripts/deploy-arc.mjs` writes `receiverAddress` only into `config.staging.json` (the local anvil fork target), so production is edited by hand. Still to do: the daily freeze job.
-4. After deploy access: `cre workflow simulate ./workflows/clippo-settlement --target production-settings --broadcast`, then `cre workflow deploy ./workflows/clippo-settlement --target production-settings` (add HTTP `authorizedKeys` first), then switch the receiver from simulation to locked: `setForwarder` to the production forwarder `0x76c9cf548b4179F8901cda1f8623568b58215E62`, `setExpectedWorkflowOwner`, `setExpectedWorkflowId`, `setWorkflowCheckSkipped(false)`, `lockConfig()` (owner transactions from the admin wallet).
+Manual equivalent of `simulate-local.sh`: `anvil --fork-url https://rpc.testnet.arc.io --port 8545 --chain-id 5042002`; `bash scripts/local-chain.sh`; `set -a; source scripts/.local-chain.env; set +a`; `node scripts/mock-backend.mjs &`; then `cre workflow simulate ./workflows/clippo-settlement --target staging-settings --non-interactive --trigger-index 0 --broadcast`. Trigger 1 is the HTTP trigger: add `--trigger-index 1 --http-payload '{}'`. The local `CRE_ETH_PRIVATE_KEY` is the public anvil account #0 key (no value on any real network).
 
-## Accounts and credentials the user must create
+## 7. Not proven and limits
 
-- CRE account at https://app.chain.link/cre, then `cre login` (needed even for simulation). Optional `CRE_API_KEY` for headless use.
-- Deployment only: Early Access approval (`cre account access`).
-- A funded Arc testnet key (USDC gas, Circle faucet) as `CRE_ETH_PRIVATE_KEY` for real-chain broadcast/deploy. Never commit it.
-- Forwarder addresses above; confirm with `cre workflow supported-chains`.
-- Public backend URL reachable by CRE nodes, and `CRON_SECRET` for the freeze job.
+Not proven:
 
-## Contract requests (for the contracts agent; not edited here)
+- **Not deployed.** `cre whoami` showed "Deploy Access: Not enabled" when last checked, and the owner has not reported the result of `cre account access`. No workflow is live on the CRE network.
+- **One node.** The simulator runs a single node, so `median` and `identical` consensus ran but never saw a disagreement between nodes.
+- **No Chainlink signatures shown.** In a simulation our own wallet sends the report through Arc's test forwarder. The production KeystoneForwarder was never used, and the production metadata layout is untested.
+- **Receiver not locked.** `workflowCheckSkipped` is true, `configLocked` is false, and no workflow id is pinned. Nothing on-chain stops a change of reporter.
+- **Manifest was local.** In the real Arc run the manifest came from a local mock backend. The deployed `/api/snapshots/clips` lists a clip only after its approval day has ended (UTC), so it is empty now. The path deployed manifest -> CRE -> escrow -> app has not run end to end.
+- **Failure paths.** A wrong YouTube key or a YouTube 5xx run end to end was not done (`youtubeGet` throws an error with only the status code; it is not exercised by the CLI). Not shown by the CLI for v2: bump, stale day, 60 rows into 3 reports of 25. The v1 CLI output covers replay, `NotHuman` and the empty feed. `docs/BUILD_LOG.md` records a v2 local-fork run (3 of 5 clips kept, 2 dropped with a reason, replay credited nothing) that is not saved in `docs/tracks`. PoolShare was not run through the CLI. `ReceiverContractExecutionStatus.REVERTED` was never observed, and reading receipts in a deployed workflow is untested.
+- **Stand-ins.** The demo creator's human registration is an attestor-signed script, not a real World ID check. The rows behind the deployed page are seeded.
+- **Setup.** `cre init` was not run; `project.yaml` and `workflow.yaml` were written from the docs. `cre workflow simulate` needs the CRE API for its credential check, which timed out intermittently (a retry passed).
+- **Old escrows.** The older escrows `0xd845...c39c` and `0xc7b9...e310` have no `humanAttestor` and do not enforce the CRE-only path. What `reportAdapter` is on them was not checked.
 
-1. DONE (contracts agent): `ClippoReportReceiver.onReport` now validates the forwarder metadata (docs: building-consumer-contracts, ReceiverTemplate pattern). Metadata is 64 bytes from the production KeystoneForwarder: workflowId bytes32 | workflowName bytes10 | workflowOwner address | reportId bytes2 (the 109-byte header is the signed report header, not the `metadata` arg). Workflow owner is REQUIRED (fail closed when unset); workflow id and name (bytes10) optional; owner-only setters with events. The CRE docs state the simulation MockKeystoneForwarder passes NO workflow metadata, so simulation needs the explicit test-only flag. Tests: `contracts/test/ClippoReportReceiver.t.sol`.
-   - Simulation: deploy with `INSECURE_SKIP_WORKFLOW_CHECK=true` (local scripts with `ALLOW_ANY_CHAIN=true` default to it); `FORWARDER_ADDRESS=0x6E9E...`. If `EXPECTED_WORKFLOW_OWNER` is also set, `tx.origin` must equal it.
-   - Production: `FORWARDER_ADDRESS=0x76c9...`, `EXPECTED_WORKFLOW_OWNER=<your CRE account/workflow owner address>`; after `cre workflow deploy` call `setExpectedWorkflowId(<id>)` (and optionally `setExpectedWorkflowName`); `setWorkflowCheckSkipped(false)`. Moving an existing simulation deployment to production: `setForwarder`, `setExpectedWorkflowOwner`, `setWorkflowCheckSkipped(false)`.
-   - Unverified: the exact owner address/format shown by the CRE tooling, and that production metadata matches the documented layout (not tested against a live KeystoneForwarder).
-2. Optional: include the report metadata (execution id) in `ReportProcessed` for audit.
+Limits:
 
-## Unverified and risks
+- **CRE quotas** (https://docs.chain.link/cre/service-quotas): 15 HTTP requests, 50 consensus calls, 25 KB per consensus observation, 250 KB per HTTP response, 5 minutes per run. This workflow needs about 3 HTTP requests (manifest, `videos.list`, `channels.list`) per 50 clips and 2 consensus calls. `normalizeManifest` refuses more than `MAX_CLIPS` = 300 clips.
+- **Chain granularity.** The chain stores views per (campaign, creator), not per clip.
+- **Scope.** YouTube only. No LLM in the workflow. HumanSplit is not touched by CRE.
+- **Trust.** A trust-minimised multi-node DON signing the report is not demonstrated.
 
-- `cre init` and real multi-node consensus were NOT run: the simulator runs one node, so `ConsensusAggregationByFields` was executed but never saw disagreement (`median` and `identical` never ran across nodes). The mock forwarder checks no DON signatures. `--broadcast` ran on real Arc once, as a simulation (our wallet, Arc's test forwarder); a live KeystoneForwarder was not used. PoolShare rows were not run through the CLI (seeded campaigns are PerView). `ReceiverContractExecutionStatus.REVERTED` was never observed: a reverting `onReport` still came back non-reverted in the simulator. Reading receipts in a deployed workflow is untested.
-- `cre workflow simulate` needs the CRE API for its credential check even for local runs; that check timed out intermittently (`context deadline exceeded`) and a retry passed.
-- project.yaml / workflow.yaml were written from the docs, not diffed against `cre init`.
-- Test counts are in `docs/BUILD_LOG.md` (the log's claims at the commits where they were run); not re-run for this doc after the merge.
-- The path real YouTube views -> deployed manifest -> CRE -> escrow -> app has not run end to end with the deployed backend feeding the workflow: the real-Arc run used a local manifest, and the deployed manifest is empty until the seeded approval day ends (UTC). The older `clippo-six.vercel.app` is not in the owner's Vercel account and is not used.
-- The demo creator's human registration is an attestor-signed stand-in for the World check. The deploy script's output ended with "campaign id 1 approved" and did not decode the campaign state; the CRE report did credit it.
-- No workflow is deployed and the receiver is not locked, so nothing pins the workflow id on-chain. What `reportAdapter` is set to on the two old escrows was not checked.
-- Arc availability for deployed workflows in your tenant: confirm with `cre workflow supported-chains`.
-- The Mumbai prize page states no judging criteria beyond the requirements above.
+## 8. Paste-ready submission text
+
+> **Clippo: a CRE workflow reads YouTube views and settles creator pay on Arc.**
+>
+> Clippo pays creators per view from a USDC pool held by an escrow contract on Arc. The question is who says how many views a clip has. We use a Chainlink CRE workflow for that. Each node gets the list of clips to check from Clippo's API, then reads the YouTube Data API itself (the API key is a CRE secret). A clip counts only if the channel bio holds `clippo:<creator wallet>`, which ties the channel to the wallet in public. The nodes take the median view count and send one signed report to a receiver contract, which calls the escrow. The escrow credits views only from that receiver. The app shows "Confirmed views" from the chain, with a link to the report transaction.
+>
+> What we ran: `cre workflow simulate --broadcast` (CLI v1.39.0) on Arc testnet, reading the real YouTube API. Result: kept 1 of 1 clips, 1 report, tx `0xa41f91daf5431332ecaf1fbdfbf7f8ca13a38d39de8c41d0c1291f229f5c8409`. The escrow credited 3 views, 0.03 USDC. The deployed site https://clippo-cre.vercel.app shows the same transaction as its proof link.
+>
+> Honest limits: this is a simulation on one node, and our own wallet sent the report through Chainlink's test forwarder. The workflow is not deployed (deploy access is not enabled for our account), so the receiver is not locked. The clip list in the real run came from a local backend. Clippo still decides which clips qualify, and bot views on YouTube still count.
+>
+> Evidence: `docs/tracks/CRE.md`, `docs/tracks/cre-simulation-real-arc.txt`. Code: `cre/workflows/clippo-settlement/`.
+
+## Appendix A. What was built
+
+- `cre/workflows/clippo-settlement/main.ts` (workflow v2). Handler 0 is a cron trigger (config `schedule`, default daily 00:30 UTC), handler 1 an HTTP trigger with an optional body `{"day":"YYYY-MM-DD"}` (`onCron`, `onHttp`, both call `settle`). `settle`: (1) `fetchManifest` on each node, every field `identical` across nodes (`day`, `sourceHash`, `hash`, `clips`); (2) `assertFresh` (`maxStalenessDays`, DON time `runtime.now()`), an empty manifest is a no-op; (3) `runtime.getSecret({id: "YOUTUBE_API_KEY"})` and `runInNodeMode(readYoutube, observationAggregation(n))`: one flat record, `kept` is `identical`, each `v<i>` is `median`; (4) `sumByCreator` into rows, `assertReceiverConfigured`, `chunkRows` by `maxRowsPerReport` (25), then per batch `runtime.report` and `EVMClient.writeReport`, checking `txStatus` and `receiverContractExecutionStatus`; (5) `readReportOutcome` reads the receipt: a missing `ReportProcessed` fails the run, and rows the receiver skipped (`ItemFailed`, for example `NotHuman()`) are logged and counted as `failedRows`.
+- `youtube.ts`: `normalizeManifest` (validate, lowercase, dedupe, sort, max 300), `manifestHash`, `videosUrl` and `channelsUrl` (use `fields=`, no key in the URL), `parseVideos`, `parseChannels`, `bioHasCode` (exact lowercase `clippo:<wallet>`, not followed by more letters or digits), `evaluateClips` (drop reasons: video not found, other channel, no view count, channel not found, bio lacks the code), `buildObservation`, `observationFields`, `parseKept`, `sumByCreator`.
+- `snapshot.ts`: `encodeReport`, `chunkRows`, `assertFresh`, `assertReceiverConfigured`, `summarizeReceiverLogs`. `config.ts`: `configSchema` and `httpTriggerConfig`. The key goes in the `x-goog-api-key` header only. The CRE secret `YOUTUBE_API_KEY` is mapped to the env var `YOUTUBE_API_KEY_CRE` by `cre/secrets.yaml` (`workflow.yaml` points both targets at it).
+- Locked-down HTTP trigger (from a teammate): `config.production.json` sets `requireHttpAuthorizedKeys` true and lists the simulation wallet `0x7149dCB8f568794c7bed1a3Bd90A6f397EeF01F6` as the authorized key; `httpTriggerConfig` fails at startup if keys are required but missing. Production config: `backendUrl` https://clippo-cre.vercel.app, receiver `0x6b0f...C0cd`, RPC `https://rpc.testnet.arc.io` (`cre/project.yaml`).
+- Replay safety: `ClippoEscrow.reportViews` ignores `cumulativeViews <= last` (emits `ViewsReported` with delta 0), credits only growth, and caps by the remaining pool. A creator without `humanOf` fails with `NotHuman`.
+- Receiver: `ClippoReportReceiver.onReport` checks `msg.sender == forwarder`, then either the workflow owner, id and name from the metadata (`_checkWorkflow`) or, in simulation mode, `tx.origin == expectedWorkflowOwner`. A failing row is skipped and logged (`ItemFailed`), so one bad row does not block a batch.
+- Backend: `GET /api/snapshots/clips[?day=]` (`web/src/app/api/snapshots/clips/route.ts`, `web/src/lib/clip-manifest.ts` `frozenClipManifest`): clips whose verdict is APPROVE and was made before the end of the day, still LIVE, in an APPROVED PER_VIEW or POOL_SHARE campaign with an on-chain id, on a verified YouTube channel whose code equals `clippo:<wallet>`; clips under an open or confirmed `VIEW_ANOMALY` flag are left out; only completed UTC days (400 otherwise); no view counts. `GET /api/snapshots/daily` (the v1 feed) still exists. Wallet-bound code: `web/src/lib/channel-code.ts` (`channelCodeFor`, `hasWalletBoundCode`, `needsReverify`) and `POST /api/channels/:id/upgrade-code`. Indexer: `web/src/lib/chain/indexer.ts` case `ViewsReported`. Display: `confirmed.ts` and `ConfirmedViews.tsx`.
+- Scripts in `cre/scripts/`: `mock-backend.mjs` (modes fixture, empty, stale, large, bump, unlinked, realyt; also a fake YouTube API), `local-chain.sh`, `simulate-local.sh`, `simulate-real-youtube.sh`, `arc-deploy.sh`, `simulate-arc-real.sh`, `emulate-delivery.mts` and `capture-evidence.sh` (CLI-free). `web/scripts/freeze-snapshot.mjs` refreshes and saves the frozen v1 feed.
+
+## Appendix B. CRE facts checked (docs.chain.link/cre, 2026-10-28)
+
+| Item | Finding |
+| --- | --- |
+| CLI | `cre` v1.39.0. Needs `cre login` even for `simulate`. |
+| SDK | `@chainlink/cre-sdk` 1.23.0 (in `cre/package.json`). Bun >= 1.2.21 compiles to WASM. |
+| Arc | `arc-testnet` is supported. Forwarders: simulation MockKeystoneForwarder `0x6E9EE680ef59ef64Aa8C7371279c27E496b5eDc1`, production KeystoneForwarder `0x76c9cf548b4179F8901cda1f8623568b58215E62`. |
+| Simulate | `cre workflow simulate <path> --target <t> [--broadcast] [--non-interactive --trigger-index N] [--http-payload ...] [--config file]`. Without `--broadcast` it is a dry run. `CRE_ETH_PRIVATE_KEY` is needed to write. |
+| Deploy | `cre workflow deploy` needs Early Access deploy approval (`cre account access`). Not required for the prize. |
+| Write path | `runtime.report(...)`, then `EVMClient.writeReport`; the forwarder calls `IReceiver.onReport(metadata, report)`. |
+
+Doc caveat: the simulate docs say the mock forwarder "doesn't call your onReport()". We tested it: it does, and the escrow credits. The forwarder swallows an `onReport` revert (the tx still succeeds), which is why `main.ts` also requires `ReportProcessed` in the receipt.
+
+## Appendix C. If deploy access is approved (NOT done)
+
+1. `cre login`; `cre account access` until `cre whoami` shows deploy access.
+2. Secret: `cre secrets create` for `YOUTUBE_API_KEY`.
+3. Deploy with the deployment registry private: `cre workflow deploy ./workflows/clippo-settlement --target production-settings` (CLI; the CRE web page only shows results). The HTTP trigger keys are already in `config.production.json`.
+4. On the receiver, as owner (the admin wallet): `setForwarder(0x76c9cf548b4179F8901cda1f8623568b58215E62)`, `setExpectedWorkflowOwner(<CRE organization address>)`, `setExpectedWorkflowId(<deployed id>)` (optionally `setExpectedWorkflowName`), `setWorkflowCheckSkipped(false)`, then `lockConfig()`. `lockConfig` refuses while the skip flag is on, so the lock works only for a deployed workflow. Unverified: the exact owner address format shown by the CRE tooling, and that production metadata matches the documented 64-byte layout.
+
+## Appendix D. Addresses
+
+| Role | Address |
+| --- | --- |
+| Escrow (enforcing, Arc testnet) | `0x1e05373c199D764f7dE0353d58AFEa2b4C6326Ef` |
+| Receiver (simulation mode, not locked) | `0x6b0f6C0f324C615Add6BfcA5EE0b8eeD66F2C0cd` |
+| Arc simulation forwarder | `0x6E9EE680ef59ef64Aa8C7371279c27E496b5eDc1` |
+| Arc production forwarder (not used) | `0x76c9cf548b4179F8901cda1f8623568b58215E62` |
+| CRE simulation wallet (sends reports, workflow owner; key only in git-ignored `cre/.env`) | `0x7149dCB8f568794c7bed1a3Bd90A6f397EeF01F6` |
+| Backend attestor (World ID stand-in signer) | `0x62EdCF9A14F0aB803Ee154EE9709323E56655074` |
+| Admin, treasury, campaigner and demo creator | `0x8CF9113b19Aa9D169365CA7B1BB9d7b957B460e5` |

@@ -1,6 +1,6 @@
 # Clippo focus guide
 
-Keep us on track until the deadline: **Sat 2026-11-07 09:00 IST**. Read this before starting any task. Update it when a decision changes. The step-by-step history lives in `docs/BUILD_LOG.md`; this file is the plan and the rules.
+Keep us on track until the deadline: **Sat 2026-11-07 09:00 IST**. Read this before starting any task. Update it when a decision changes. The step-by-step history lives in `docs/BUILD_LOG.md`; this file is the plan and the rules. Last reviewed: 2026-11-07, after PR #2 (CRE work and the teammate's World step-up) was merged into `main` (`ab35b35`).
 
 ## The one rule
 
@@ -18,94 +18,93 @@ If the answer to 3 is "yes", the work is an add-on. Skip it, or cut it down to t
 
 All tracks of one partner count as one pick. Do not add a fourth partner.
 
-| Partner | Prize tracks we target | What makes it core | Status |
-| --- | --- | --- | --- |
-| Chainlink | Best workflow with CRE ($1,500) | The escrow accepts view credits only from the CRE report adapter, so no Clippo key can invent views. | Contract enforcement written (`498f649`), not deployed. Workflow simulated (`6f74f7b`): live-feed run is an empty no-op; a credit run was done on a local fork of Arc only. Not deployed. |
-| World | Agent Pass ($5,000 / $2,500 Continuity), Best Use of IDKit ($2,500 / $2,500 Continuity) | One verified human per wallet is checked by the contract; a split needs a fresh human approval bound to that split. | `registerHuman` and approval check written (`498f649`). OIDC step-up at `auth.world.org` written (`19205ba`). Never run against the real issuer or a real proof. |
-| Arc | Best Smart Contracts with Advanced Stablecoin Logic in Arc Studio ($3,000) | The escrow holds USDC and pays gas in USDC on Arc. | Old escrow is live on Arc testnet. New enforcing escrow is not deployed. No Arc Studio project exists. |
+| Partner | Track we target | What makes it core | Where it stands (2026-11-07) | Read |
+| --- | --- | --- | --- | --- |
+| Chainlink | Best workflow with CRE ($1,500) | The escrow credits views only from the receiver the CRE workflow reports through, and the nodes read the views from YouTube themselves. The app shows Confirmed views with a proof link. | Built. Simulated with the CRE CLI on real Arc, reading the real YouTube video (tx `0xa41f91da…c8409`, 3 views). Not deployed on the CRE network, one node, our wallet sends the report. Not locked. | `docs/tracks/CRE.md` |
+| World | Best Use of IDKit ($2,500); related: Agent Pass ($5,000) | The escrow credits only wallets linked to a unique human, and an unverified account cannot post. | Built and tested with doubles. IDKit has not run live: no real proof, `WORLD_ID_*` unset on the deployed site, debrief not filled. The step-up (Agent Pass) has never run against the real issuer. | `docs/tracks/WORLD_IDKIT.md` |
+| Arc | Best Smart Contracts with Advanced Stablecoin Logic, In Arc Studio ($3,000) | The escrow holds USDC and pays gas in USDC on Arc. | Contracts, frontend and backend are real; the enforcing escrow is deployed on Arc testnet (simulation mode). Crosschain not built. **Arc Studio was not used by us**, and the prize requires it. | `docs/SUBMISSION_ARC.md` |
 
 Prize text and requirements: https://ethglobal.com/events/mumbai/prizes (re-read it before submitting; partners can change it).
 
 ## What we may say today, and what we may not
 
-| We may say | We may NOT say (yet) |
+| We may say | We may NOT say |
 | --- | --- |
-| The enforcing escrow is written and its Foundry tests pass (per the build log). | That it is deployed, or that the live site uses it. |
-| The CRE workflow ran in the CRE simulator, and a credit was made on a local fork of Arc. | That CRE is deployed, ran on real Arc, or reaches consensus. |
-| The Agent Pass step-up is written and tested against a local fake issuer. | That it works against the real `auth.world.org`. |
-| The contracts were written and tested in Foundry. | That Arc Studio built or deployed anything. |
-| Prize World proofs are mocked identities (World says so). | That any World proof has run in this repo. |
+| The enforcing escrow and the receiver are deployed on Arc testnet (`0x1e05…26Ef`, `0x6b0f…C0cd`), and 114 Foundry tests pass. | That the receiver is locked, or that the contracts were built or deployed in Arc Studio. |
+| The CRE workflow ran with `cre workflow simulate --broadcast` on real Arc, read the real YouTube video, and the escrow credited 3 views (0.03 USDC). | That the workflow is deployed on the CRE network, that Chainlink nodes signed the report, or that consensus ran across nodes. |
+| The deployed site (`clippo-cre.vercel.app`, built from `main`) shows those 3 Confirmed views with a proof link to the real transaction. | That the records behind it are organic: the user, channel, campaign and clip are seeded and labelled `[SEED]`. |
+| IDKit is integrated and tested with test doubles; the credential and the failure paths are documented. | That any World proof has run in this repo, or that IDKit works against the real portal. |
+| The step-up is written and tested against a local fake issuer. | That it works against the real `auth.world.org`. |
+| Prize World proofs are mocked fake identities (World says so). | That a proof is production-grade. |
+| The demo creator's human registration was signed by our attestor wallet as a stand-in. | That the creator passed a World ID check. |
 
 Rules: never claim something works unless it was run. Never invent tx hashes. Record real hashes in `docs/BUILD_LOG.md` the moment they exist.
 
-## Order of work (each step unlocks the next)
+## What is done and what is open
 
-1. **Deploy the new escrow on Arc** (owner signs). Needs the backend wallet address (`HUMAN_ATTESTOR_ADDRESS`). Until this is done, nothing "real" can be shown.
-2. **Point the app at it.** Vercel env, `ESCROW_ADDRESS`, `ESCROW_DEPLOY_BLOCK`, and the real receiver in `cre/workflows/clippo-settlement/config.production.json`. Edit that file by hand: the deploy helper `scripts/deploy-arc.mjs` only writes `config.staging.json`.
-3. **One full real run on Arc:** fund, approve, CRE report, claim, dispute. Save every tx hash in the build log.
-4. **Arc Studio:** create the project, import the repo, get the shareable URL. Every Arc prize requires it.
-5. **World:** create the portal client, run one real IDKit proof (simulator) and one real step-up. Fill in the debrief only with real numbers.
-6. **CRE:** simulate again with the final config. Deploy only if CRE access is approved; otherwise submit the simulation and say so.
-7. **Docs and video:** under 4:00, at least 720p, your own voice, not sped up. Fill `docs/SUBMISSION_CHECKLIST.md`.
-8. **Submit before 09:00 IST.** Leave a buffer of at least one hour.
+Done (see the build log for evidence):
+- [x] Enforcing escrow deployed on Arc testnet, one campaign created and approved, demo wallet registered as a human (stand-in).
+- [x] CRE workflow v2 built, tested (26 tests), compiled, simulated on a local fork and on real Arc with the real YouTube API.
+- [x] Backend: confirmed-views table, indexer, manifest route, wallet-bound channel codes. Frontend: Confirmed and Pending views.
+- [x] Deployed site on its own Vercel project and database, from `main`.
+- [x] Docs corrected and aligned with the code; architecture diagram redrawn.
 
-Optional, only if steps 1 to 7 are done and there is time left. Both come from the earlier review and have not been started:
+Open, in the order that matters for the submission:
+1. **Arc Studio.** Decide how to meet the requirement honestly: open the Studio URL on file and see what it holds, or import the current contract into Studio and share the project, and show Studio in the video. Until then say plainly that we did not use it. (`docs/tracks/ARC.md`)
+2. **IDKit live run.** Set `WORLD_ID_*` on the deployed site (needs the Developer Portal app that exists), run one real proof and one failure path, then fill the debrief with real numbers. (`docs/tracks/WORLD_IDKIT.md`)
+3. **CRE deploy access.** Run `cre account access` and report the result. Deploy is optional for the prize; without it the immutable layer (pin the workflow, lock the receiver) stays undone.
+4. **Record the video.** Under 4:00, at least 720p, your own voice, not sped up. The CRE segment is the three-screen demo: terminal, explorer, site. (`docs/DEMO_SCRIPT.md`)
+5. **Submit before 09:00 IST** with a buffer of at least one hour.
 
-- CRE reads views from YouTube itself instead of Clippo's feed. This makes the "Clippo cannot invent views" claim true. Without it, the claim is weaker. (Estimated 6 to 7 hours.)
-- A confirmed fraud flag bans the person, not just the account (about 6 hours). See the trap below.
+After the merge, the next work is UI. Start a new branch from `main`.
 
 ## Prize requirements checklist
 
-Tick only when it exists and was run.
+Tick only when it exists and was run. Detailed status is in each track document.
 
 **Chainlink CRE**
-- [ ] A CRE workflow that links a blockchain with an external API, data source, LLM or agent
-- [ ] A successful CLI simulation or a live deploy
-- [ ] The workflow is meaningfully used by the project (the escrow depends on it)
-
-**World Agent Pass**
-- [ ] Official Agent Pass integration (OIDC at `auth.world.org`)
-- [ ] Full journey: request, user completion, validated result, protected action
-- [ ] A denied, expired or cancelled path where the action does not happen
-- [ ] Result validated in the backend, with no client secret in the browser
-- [ ] Short debrief: time to first success, friction, missing docs, best improvement
+- [x] A CRE workflow that links a blockchain with an external API (YouTube)
+- [x] A successful CLI simulation (real Arc tx `0xa41f91da…c8409`)
+- [x] The workflow is meaningfully used by the project (the escrow credits views only through it)
+- [ ] Live deployment on the CRE network (optional; deploy access not enabled)
 
 **World IDKit**
-- [ ] IDKit in a working app
-- [ ] Result verified on the server or onchain
-- [ ] A written trust moment and why this credential is enough
-- [ ] One success and one alternative path (cancelled, rejected, ineligible)
-- [ ] Short debrief
+- [x] IDKit in the app (tested with doubles)
+- [x] Result verified on the server, and the wallet linked on-chain (tested with doubles)
+- [x] A written trust moment and why the credential is enough
+- [ ] One success and one alternative path, run live
+- [ ] Short debrief with real numbers
 
 **Arc (smart contracts track)**
-- [ ] Shareable Arc Studio project URL, and Studio shown in the demo
-- [ ] Working frontend and backend, plus an architecture diagram
-- [ ] Video and presentation, repo link
-- [ ] The submission names the exact bounty
+- [x] Working frontend and backend, plus an architecture diagram
+- [x] The submission names the exact bounty
+- [ ] Shareable Arc Studio project URL that judges can open, and Studio shown in the demo
+- [ ] Video and presentation (not recorded)
+- [x] Repo link: https://github.com/Tan0610/Clippo_EthMumbai
 
 **Everyone**
-- [ ] Public repo with small commits (no single large final commit)
-- [ ] What existed before the event is written down, and what is new
-- [ ] Where AI tools were used is written down
+- [x] Public repo with small commits
+- [x] What existed before the event is written down (README, "project history")
+- [x] Where AI tools were used is written down (README)
 - [ ] Video 2 to 4 minutes
 
 ## Traps to avoid
 
 - **Fraud flags:** `web/src/lib/antifraud/flags.ts` confirms flags of two kinds, `VIEW_ANOMALY` and `CLIP_DELETED`. If you add a ban, ban only on `VIEW_ANOMALY`, or a creator who deletes a clip gets banned.
-- **New CRE data route:** if you add a route that CRE reads, apply the same filters as `web/src/lib/snapshots.ts`: approved campaign, PerView or PoolShare mode, clip still live, AI verdict approve, and the `VIEW_ANOMALY` fraud hold. That file does not check "verified human" or caps; the escrow enforces those. A new route that skips the filters bypasses the rules.
-- **Wrong escrow address:** two old escrows exist on Arc testnet (`0xd845…c39c` is what the live site uses; `0xc7b9…e310` is cited in `docs/SUBMISSION_ARC.md`). Neither is the new escrow. Do not quote either as "the" deployed contract.
-- **Single-node simulator:** CRE simulation has no real consensus. Say that; do not claim a trust gain you did not show.
+- **New CRE data route:** if you add a route that CRE reads, apply the same filters as `web/src/lib/clip-manifest.ts`: approved campaign, PerView or PoolShare, clip still live, verdict approve, wallet-bound channel code, and no open `VIEW_ANOMALY` flag. A route that skips them bypasses the rules.
+- **Old escrow addresses:** two older-design escrows exist on Arc testnet (`0xd845…c39c`, `0xc7b9…e310`). Neither is the current escrow. Do not quote them as "the" deployed contract.
+- **Single-node simulator:** CRE simulation has no real consensus, and the report comes from our own wallet. Say that; do not claim a trust gain you did not show.
+- **Seeded records:** the deployed demo site holds `[SEED]` rows on purpose. Say so wherever you show it.
 - **Do not mix World proof versions.** Pick one and keep it.
 - **No LICENSE file** is tracked. The owner must choose a license; do not add one without asking.
 
 ## Rejected on purpose (do not spend time here)
 
 - Uniswap, ENS, 0G, Hedera, Whitechain, 1inch, Arkiv, Definitive, EF tracks, CCIP: each would sit beside the core loop, and a plain replacement does the same job.
-- Arc DeFi, consumer-agent and Bridge Kit tracks: they would mean reframing Clippo or take too long. Arc Studio Continuity is the fallback if the smart-contracts track cannot be met.
+- Arc DeFi, consumer-agent and Bridge Kit tracks: they would mean reframing Clippo. Arc Studio Continuity is the fallback if the smart-contracts track cannot be met.
 
 ## Open decisions for the owner
 
-1. Which old escrow address is the one to cite, if any (`0xd845…c39c` or `0xc7b9…e310`)?
-2. Is the optional CRE-reads-YouTube work worth the hours, or do we submit what the simulation shows?
-3. License for the repo.
-4. Who owns each file when two sessions work at once (one session per file group avoids overwrites).
+1. Arc Studio: what does the Studio URL on file contain, and do we import the current contract into Studio?
+2. License for the repo.
+3. Who owns each file when two sessions work at once (one session per file group avoids overwrites).
