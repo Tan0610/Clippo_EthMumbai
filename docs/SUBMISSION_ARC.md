@@ -27,7 +27,7 @@ See `docs/architecture.svg` (open in a browser; export/screenshot to PNG for the
 | Field | Value |
 | --- | --- |
 | Bounty | Best Smart Contracts with Advanced Stablecoin Logic, In Arc Studio |
-| Arc Studio project URL | `<ARC_STUDIO_PROJECT_URL>` |
+| Arc Studio project URL | https://studio.arc.io/app/34ef3b95-32bd-48f9-9310-b8135e1d92ce (use the Studio **Share** button to make it public, then paste that link here) |
 | Deployed escrow (ClippoEscrow) | `0xc7b9588ee0a4bff31e17ece1141ea404ad05e310` — https://explorer.testnet.arc.io/address/0xc7b9588ee0a4bff31e17ece1141ea404ad05e310 |
 | GitHub repo | https://github.com/Tan0610/Clippo_EthMumbai |
 | Demo video (≤5 min) | `<VIDEO_URL>` — script in `docs/DEMO_SCRIPT.md` |
