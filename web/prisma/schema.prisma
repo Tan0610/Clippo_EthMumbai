@@ -79,6 +79,8 @@ model User {
   role             Role
   wallet           String       @unique
   worldIdNullifier String?      @unique
+  /// World IdP account link: exact `iss|sub` of the validated ID token (sub is opaque and case-sensitive). Set on the first successful step-up.
+  worldIdpIdentity String?      @unique
   verified         Boolean      @default(false)
   createdAt        DateTime     @default(now())
   channels         Channel[]

@@ -24,6 +24,8 @@ const secret = () => {
   return "dev-insecure-secret";
 };
 const sign = (payload: string) => createHmac("sha256", secret()).update(payload).digest("base64url");
+/** A 32-byte key for one purpose, derived from SESSION_SECRET so it can never validate as a session token. */
+export const purposeKey = (purpose: string) => createHmac("sha256", secret()).update(`clippo-key|${purpose}`).digest();
 
 export function normalizeWallet(w: string): string {
   return w.trim().toLowerCase();

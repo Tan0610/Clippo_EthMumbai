@@ -2,7 +2,8 @@
 import { OnchainDisputes } from "./OnchainDisputes";
 import { useState } from "react";
 import Link from "next/link";
-import { actions, agentPass, api, errText, type AgentProposalView, type SplitProposal } from "./api";
+import { actions, agentPass, api, DEMO, errText, type AgentProposalView, type SplitProposal } from "./api";
+import { beginStepUp, stepUpFailText, useStepUpReturn, type PendingStepUp } from "./stepup-client";
 import { normalizeSplit, splitHash } from "@/lib/chain/split";
 import { AgentPassPanel } from "./AgentPassPanel";
 import type { Campaign, Submission } from "@/ui-mocks/data";
@@ -82,12 +83,41 @@ export function DeskView() {
     }
     if (r !== "verified" || !proof) return setMsg({ kind: "bad", text: `Split not approved. ${worldFailText(null, r, message)}` });
     if (!rv) return;
-    const c = rv.c;
+    await sendApproval({ campaignId: rv.c.id, splits: rv.splits, proposalId: rv.proposalId }, proof);
+  }
+  /** The agent's split goes through World ID step-up: the browser leaves for the issuer and the approval resumes on return. */
+  async function approveAgentSplit(c: Campaign) {
+    const p = agentProp[c.id]!;
+    if (DEMO) return setReview({ c, splits: p.splits, hash: p.splitHash, proposalId: p.id });
     try {
-      const res = await escrow.approveSplit(c.id, rv.splits, proof, rv.proposalId);
+      await beginStepUp({ campaignId: c.id, splits: p.splits, proposalId: p.id }, "desk");
+    } catch (e) {
       setPanelKey((k) => k + 1);
-      setAgentProp((x) => { const n = { ...x }; if (res.proposal.status !== "PENDING") delete n[c.id]; return n; });
-      setProposals((p) => ({ ...p, [c.id]: res.proposal }));
+      setMsg({ kind: "bad", text: `Split not approved. ${worldFailText(e)}` });
+    }
+  }
+  useStepUpReturn(async (r) => {
+    setPanelKey((k) => k + 1);
+    if (r.token && r.pending) {
+      setMsg({ kind: "ok", text: "World ID check passed. Confirm the approval in your wallet." });
+      return sendApproval(r.pending, { stepUpToken: r.token });
+    }
+    setMsg({ kind: "bad", text: `Split not approved. ${stepUpFailText(r.error)}` });
+    if (r.pending) void restoreOpenProposal(r.pending.campaignId);
+  });
+  /** The agent's open proposal lives in page state, which the redirect cleared. Bring it back so the approver can retry. */
+  async function restoreOpenProposal(campaignId: string) {
+    const a = await agentPass.activity(campaignId).catch(() => null);
+    const p = a?.proposals.find((x) => x.status === "PROPOSED" && new Date(x.expiresAt).getTime() > Date.now());
+    if (p) setAgentProp((x) => ({ ...x, [campaignId]: p }));
+  }
+  async function sendApproval(rv: PendingStepUp, check: WorldProof | { stepUpToken: string }) {
+    const cid = rv.campaignId;
+    try {
+      const res = await escrow.approveSplit(cid, rv.splits, check, rv.proposalId);
+      setPanelKey((k) => k + 1);
+      setAgentProp((x) => { const n = { ...x }; if (res.proposal.status !== "PENDING") delete n[cid]; return n; });
+      setProposals((p) => ({ ...p, [cid]: res.proposal }));
       const st = res.proposal.status;
       setMsg({
         kind: "ok",
@@ -101,7 +131,8 @@ export function DeskView() {
     } catch (e) {
       setPanelKey((k) => k + 1);
       const code = (e as { code?: string }).code;
-      if (code === "PROPOSAL_EXPIRED" || code === "SPLIT_CHANGED" || code === "AGENT_REVOKED") setAgentProp((x) => { const n = { ...x }; delete n[c.id]; return n; });
+      if (code === "PROPOSAL_EXPIRED" || code === "SPLIT_CHANGED" || code === "AGENT_REVOKED") setAgentProp((x) => { const n = { ...x }; delete n[cid]; return n; });
+      else if ("stepUpToken" in check) void restoreOpenProposal(cid);
       setMsg({ kind: "bad", text: `Split not approved. ${worldFailText(e)}` });
     }
   }
@@ -160,7 +191,7 @@ export function DeskView() {
                         {c.status === "awaiting_funds" && <Link href={`/desk/${c.id}/fund?pool=${c.pool}`} className="btn sm">Fund {money(c.pool, 0)} USDC</Link>}
                         {c.status === "live" && c.mode === "human_split" && (agentProp[c.id] ? (
                           <>
-                            <button className="btn sm" onClick={() => setReview({ c, splits: agentProp[c.id]!.splits, hash: agentProp[c.id]!.splitHash, proposalId: agentProp[c.id]!.id })}>{c.approver === "me_and_admin" ? "Approve agent's split (1 of 2)" : "Approve agent's split"}</button>
+                            <button className="btn sm" onClick={() => approveAgentSplit(c)}>{c.approver === "me_and_admin" ? "Approve agent's split (1 of 2)" : "Approve agent's split"}</button>
                             <button className="btn ghost sm" disabled={busyAgent === c.id} onClick={() => askAgent(c)}>Ask the AI again</button>
                             <button className="btn ghost sm" disabled={busyAgent === c.id} onClick={() => askAgent(c, "deterministic")}>Propose without AI</button>
                           </>

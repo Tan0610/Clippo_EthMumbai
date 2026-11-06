@@ -13,6 +13,9 @@ import { resetDb } from "@/test/db";
 process.env.ADMIN_WALLETS = "0xad00000000000000000000000000000000000001";
 process.env.SESSION_SECRET = "test-secret";
 process.env.AGENT_PASS_PRIVATE_KEY = generatePrivateKey();
+process.env.WORLD_IDP_CLIENT_ID = "client";
+process.env.WORLD_IDP_CLIENT_SECRET = "secret";
+process.env.WORLD_IDP_REDIRECT_URI = "https://app.test/api/agentpass/stepup/callback";
 
 type Db = typeof import("@/lib/db").db;
 let db: Db;
@@ -62,11 +65,22 @@ async function propose(campaignId: string, body: Record<string, unknown> = { mod
   expect(p.status).toBe(201);
   return p.body.proposal as { id: string; splitHash: string; splits: { creatorWallet: string; amount: number }[]; agent: { address: string } };
 }
-const approveBody = (p: { id: string; splits: { creatorWallet: string; amount: number }[] }, worldIdProof: unknown) => ({
+/** A validly issued step-up token. The OIDC flow that earns one is covered in stepup.integration.test.ts; here it is the input. */
+async function stepUp(wallet: string, campaignId: string, p: { id: string; splitHash: string }) {
+  const { issueStepUpToken } = await import("./stepup");
+  const u = await db.user.findUniqueOrThrow({ where: { wallet } });
+  return issueStepUpToken(
+    { userId: u.id, campaignId, splitHash: p.splitHash, proposalId: p.id, attemptId: `attempt-${++n}`, mayEnroll: true },
+    { iss: "https://auth.world.org", sub: `sub-${wallet}`, authTime: Math.floor(Date.now() / 1000), acr: "https://world.org/oidc/acr/orb", amr: ["pop"] },
+  );
+}
+const approveBody = (p: { id: string; splits: { creatorWallet: string; amount: number }[] }, stepUpToken: string) => ({
   splits: p.splits.map((s) => ({ creatorWallet: s.creatorWallet, amount: s.amount })),
-  worldIdProof,
+  stepUpToken,
   agentProposalId: p.id,
 });
+/** A split the approver built themselves (not the agent's), which still uses an IDKit proof. */
+const builtBody = (worldIdProof: unknown) => ({ splits: [{ creatorWallet: CREATOR, amount: 499 }], worldIdProof });
 const audits = (campaignId: string) => db.agentAudit.findMany({ where: { campaignId }, orderBy: { createdAt: "asc" } });
 
 beforeAll(async () => {
@@ -158,9 +172,9 @@ describe("human approval of the agent's proposal: failure paths leave it undone 
       expect((await db.agentProposal.findUniqueOrThrow({ where: { id: p.id } })).status).toBe("PROPOSED");
     };
 
-    // cancelled / expired proofs
+    // cancelled / expired IDKit proofs
     for (const bad of ["cancelled", "expired"]) {
-      const r = await call(POST, jsonReq(url, CAMPAIGNER, approveBody(p, proof(bad))), c.id);
+      const r = await call(POST, jsonReq(url, CAMPAIGNER, builtBody(proof(bad))), c.id);
       expect(r.status).toBe(403);
       expect(r.body.error.code).toBe("WORLD_ID_DENIED");
       await undone();
@@ -169,28 +183,28 @@ describe("human approval of the agent's proposal: failure paths leave it undone 
     const used = proof();
     const { proofHashOf } = await import("@/lib/worldid/fresh");
     await db.usedProof.create({ data: { proofHash: proofHashOf(used), userId: "x", action: "clippo-approve-split" } });
-    const rep = await call(POST, jsonReq(url, CAMPAIGNER, approveBody(p, used)), c.id);
+    const rep = await call(POST, jsonReq(url, CAMPAIGNER, builtBody(used)), c.id);
     expect(rep.body.error.code).toBe("PROOF_REUSED");
     await undone();
 
     // wrong approver: single-approver campaign, an admin cannot stand in
-    const wrong = await call(POST, jsonReq(url, ADMIN, approveBody(p, proof())), c.id);
+    const wrong = await call(POST, jsonReq(url, ADMIN, approveBody(p, await stepUp(ADMIN, c.id, p))), c.id);
     expect(wrong.status).toBe(403);
     expect(wrong.body.error.code).toBe("WRONG_APPROVER");
     // a different campaigner who does not own it
-    const stranger = await call(POST, jsonReq(url, OTHER, approveBody(p, proof())), c.id);
+    const stranger = await call(POST, jsonReq(url, OTHER, approveBody(p, await stepUp(OTHER, c.id, p))), c.id);
     expect(stranger.status).toBe(403);
     await undone();
 
     // split changed after the agent proposed it (hash mismatch)
-    const changed = await call(POST, jsonReq(url, CAMPAIGNER, { ...approveBody(p, proof()), splits: [{ creatorWallet: CREATOR, amount: 499 }] }), c.id);
+    const changed = await call(POST, jsonReq(url, CAMPAIGNER, { ...approveBody(p, await stepUp(CAMPAIGNER, c.id, p)), splits: [{ creatorWallet: CREATOR, amount: 499 }] }), c.id);
     expect(changed.status).toBe(409);
     expect(changed.body.error.code).toBe("SPLIT_CHANGED");
     await undone();
 
     // expired proposal
     await db.agentProposal.update({ where: { id: p.id }, data: { expiresAt: new Date(Date.now() - 1000) } });
-    const exp = await call(POST, jsonReq(url, CAMPAIGNER, approveBody(p, proof())), c.id);
+    const exp = await call(POST, jsonReq(url, CAMPAIGNER, approveBody(p, await stepUp(CAMPAIGNER, c.id, p))), c.id);
     expect(exp.status).toBe(410);
     expect(exp.body.error.code).toBe("PROPOSAL_EXPIRED");
     expect(await db.splitProposal.count({ where: { campaignId: c.id } })).toBe(0);
@@ -198,7 +212,7 @@ describe("human approval of the agent's proposal: failure paths leave it undone 
 
     // fresh proposal, human approves with a fresh proof: only now does anything move
     const p2 = await propose(c.id);
-    const good = await call(POST, jsonReq(url, CAMPAIGNER, approveBody(p2, proof())), c.id);
+    const good = await call(POST, jsonReq(url, CAMPAIGNER, approveBody(p2, await stepUp(CAMPAIGNER, c.id, p2))), c.id);
     expect(good.status).toBe(201);
     expect(good.body.proposal.status).toBe("AWAITING_CHAIN");
     expect(good.body.payouts).toEqual([]);
@@ -206,7 +220,7 @@ describe("human approval of the agent's proposal: failure paths leave it undone 
     expect((await db.agentProposal.findUniqueOrThrow({ where: { id: p2.id } })).status).toBe("APPROVED");
 
     // already released
-    const again = await call(POST, jsonReq(url, CAMPAIGNER, approveBody(p2, proof())), c.id);
+    const again = await call(POST, jsonReq(url, CAMPAIGNER, approveBody(p2, await stepUp(CAMPAIGNER, c.id, p2))), c.id);
     expect(again.status).toBe(409);
     expect(again.body.error.code).toBe("ALREADY_RELEASED");
 
@@ -220,19 +234,19 @@ describe("human approval of the agent's proposal: failure paths leave it undone 
     expect(log.find((a) => a.outcome === "REPLAYED")).toMatchObject({ proofStatus: "REPLAYED" });
   });
 
-  it("two-party: the admin must give their own fresh proof on the identical agent proposal", async () => {
+  it("two-party: the admin must give their own fresh step-up on the identical agent proposal", async () => {
     const { POST } = await import("@/app/api/campaigns/[id]/split/route");
     const c = await setup();
     const p = await propose(c.id);
     const url = `/api/campaigns/${c.id}/split`;
-    const first = proof();
+    const first = await stepUp(CAMPAIGNER, c.id, p);
     const a = await call(POST, jsonReq(url, CAMPAIGNER, approveBody(p, first)), c.id);
     expect(a.body.proposal).toMatchObject({ status: "PENDING", awaiting: ["admin"] });
     expect((await db.agentProposal.findUniqueOrThrow({ where: { id: p.id } })).status).toBe("PROPOSED");
-    // the campaigner's proof cannot be reused by the admin
+    // the campaigner's token cannot be used by the admin
     const replay = await call(POST, jsonReq(url, ADMIN, approveBody(p, first)), c.id);
-    expect(replay.body.error.code).toBe("PROOF_REUSED");
-    const b = await call(POST, jsonReq(url, ADMIN, approveBody(p, proof())), c.id);
+    expect(replay.body.error.code).toBe("STEP_UP_MISMATCH");
+    const b = await call(POST, jsonReq(url, ADMIN, approveBody(p, await stepUp(ADMIN, c.id, p))), c.id);
     expect(b.body.proposal.status).toBe("AWAITING_CHAIN");
     expect((await db.agentProposal.findUniqueOrThrow({ where: { id: p.id } })).status).toBe("APPROVED");
   });
@@ -243,7 +257,7 @@ describe("human approval of the agent's proposal: failure paths leave it undone 
     const c = await setup();
     const p = await propose(c.id);
     expect((await call(agentRoute.DELETE, jsonReq(`/api/campaigns/${c.id}/agent`, CAMPAIGNER, undefined, "DELETE"), c.id)).status).toBe(200);
-    const r = await call(POST, jsonReq(`/api/campaigns/${c.id}/split`, CAMPAIGNER, approveBody(p, proof())), c.id);
+    const r = await call(POST, jsonReq(`/api/campaigns/${c.id}/split`, CAMPAIGNER, approveBody(p, await stepUp(CAMPAIGNER, c.id, p))), c.id);
     expect(r.body.error.code).toBe("AGENT_REVOKED");
     expect(await db.splitProposal.count({ where: { campaignId: c.id } })).toBe(0);
   });

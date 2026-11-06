@@ -230,13 +230,13 @@ export const escrow = {
     if (!c.onchainId) throw new ApiError(409, "CHAIN_STATE_MISMATCH", "This campaign has no on-chain id yet, so it cannot be closed on-chain.");
     return wrap(closeCampaignOnchain(c.id, c.onchainId));
   },
-  /** One approver's split approval: POST /split with THEIR fresh World ID proof, then approveSplit on-chain from their wallet. */
-  async approveSplit(campaignId: string, splits: { creatorWallet: string; amount: number }[], proof: WorldProof, agentProposalId?: string): Promise<SplitResult> {
+  /** One approver's split approval: POST /split with THEIR fresh human check (step-up token or IDKit proof), then approveSplit on-chain from their wallet. */
+  async approveSplit(campaignId: string, splits: { creatorWallet: string; amount: number }[], proof: WorldProof | { stepUpToken: string }, agentProposalId?: string): Promise<SplitResult> {
     if (DEMO && !escrowReady(await loadChain())) {
       await demoTx(800);
       return { proposal: { id: "demo", status: "PENDING", splitHash: "0xdemo", approvals: { campaigner: true, admin: false }, awaiting: ["admin"] }, attestation: "0xdemo", txHash: null };
     }
-    const r = await wrap(approveSplit(campaignId, splits, wireProof(proof) as never, agentProposalId));
+    const r = await wrap(approveSplit(campaignId, splits, "stepUpToken" in proof ? proof : (wireProof(proof) as never), agentProposalId));
     return { proposal: r.proposal as SplitProposal, attestation: r.attestation, txHash: r.txHash };
   },
 };
