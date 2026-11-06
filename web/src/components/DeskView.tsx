@@ -1,4 +1,5 @@
 "use client";
+import { OnchainDisputes } from "./OnchainDisputes";
 import { useState } from "react";
 import Link from "next/link";
 import { actions, agentPass, api, errText, type AgentProposalView, type SplitProposal } from "./api";
@@ -211,6 +212,7 @@ export function DeskView() {
           </ul>
         )}
       </section>
+      {camps.status === "ready" && camps.data.some((c) => c.mode === "per_view") && <OnchainDisputes role="campaigner" />}
       {camps.status === "ready" && camps.data.filter((c) => c.mode === "human_split").map((c) => (
         <section key={c.id} className="section" aria-label={`Agent Pass activity for ${c.title}`}>
           <AgentPassPanel campaignId={c.id} title={`Agent Pass activity: ${c.title}`} refreshKey={panelKey} />
