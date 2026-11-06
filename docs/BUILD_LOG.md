@@ -45,7 +45,14 @@ Track status at the start:
 
 ## Log
 
-### 18. First CRE report on REAL Arc, reading the REAL YouTube video, commit pending
+### 19. Vercel steps and a seed script for the deployed database, commit pending
+
+- **What:** the owner installed the Vercel CLI and logged in (2026-11-07). Wrote the Vercel steps into `docs/CRE_DEPLOY.md` (section 6) and `web/scripts/seed-cre-demo.mjs`: seeds a creator user, the `@visualsbyanii` channel, a campaign row linked to on-chain campaign 1 and one approved clip, all labelled `[SEED]`. It does NOT seed views, credits or the proof link: those come from the chain (indexer) and the YouTube API (`/api/snapshots/refresh`). It is a dry run unless `--confirm` is given, refuses to continue if an old-escrow campaign already holds on-chain id 1 unless `--retire-old` is given (that only clears the on-chain link of those rows), and is safe to re-run.
+- **Why:** the live database may hold a campaign linked to id 1 of the OLD escrow; the new escrow's campaign 1 would be mixed up with it. The app also needs matching rows before it can show the real Confirmed views for the demo wallet.
+- **Tested:** on a local database that held a stale campaign with on-chain id 1: dry run stops with a clear message; `--confirm` without `--retire-old` stops; `--confirm --retire-old` writes the seed rows and leaves one campaign with id 1; a re-run changes nothing.
+- **Not proven:** nothing was run on the production database or on Vercel (the owner runs those steps). The brand `/desk` screen cannot be signed into on production with the placeholder campaigner.
+
+### 18. First CRE report on REAL Arc, reading the REAL YouTube video, commit `c4d8e30`
 
 - **What:** after the owner funded the simulation wallet (funding tx `0xc19bf62333ac5ffb3ac79a24734d2690c8589e296903f20ca0360bd22df1c707`, status success, 20 USDC), ran `bash scripts/simulate-arc-real.sh vWk4YV_dbsE UCIZw3qclbEDMa4TCFMAatww` (`cre workflow simulate --target production-settings --broadcast`, CLI v1.39.0). Manifest: one real clip from a local mock backend. YouTube: the real Data API.
 - **Result:** "youtube agreed: kept 1/1 clips", 1 report, 0 failed rows. Transaction `0xa41f91daf5431332ecaf1fbdfbf7f8ca13a38d39de8c41d0c1291f229f5c8409` (block 71094857, status success): from the simulation wallet `0x7149...01F6`, to Arc's Chainlink simulation forwarder `0x6E9E...eDc1`, 4 logs: `CreatorCredited` and `ViewsReported` from the escrow, `ReportProcessed` from the receiver, and the forwarder's own event. Independent `cast call` on the escrow: `reportedViews(1, 0x8CF9...60e5)` = 3 (the video's real count), `credited` = 30000 units = 0.03 USDC. Explorer: https://explorer.testnet.arc.io/tx/0xa41f91daf5431332ecaf1fbdfbf7f8ca13a38d39de8c41d0c1291f229f5c8409. Output: `docs/tracks/cre-simulation-real-arc.txt` (no API key in it).
