@@ -4,7 +4,7 @@ import { useAsync, useSession } from "./hooks";
 import { actions, type WorldProof } from "./api";
 import { Correction, Loading, PageHead } from "./Bits";
 import { VerifiedMark } from "./Icons";
-import { ChannelProof } from "./JoinView";
+import { ChannelProof, CredentialUnavailable, WhyProofOfHuman } from "./JoinView";
 import { WorldCheck, worldFailText, type WorldResult } from "./WorldCheck";
 
 function Channels() {
@@ -41,9 +41,12 @@ export function AccountView() {
   const s = useSession();
   const [world, setWorld] = useState(false);
   const [fail, setFail] = useState("");
+  const [noCred, setNoCred] = useState(false);
 
   async function result(r: WorldResult, proof?: WorldProof, message?: string) {
     setWorld(false);
+    setNoCred(r === "unavailable");
+    if (r === "unavailable") return setFail("");
     if (r !== "verified" || !proof) return setFail(worldFailText(null, r, message));
     try {
       await s.verifyWorld(proof);
@@ -66,8 +69,10 @@ export function AccountView() {
           </dl>
           <div className="row">
             {s.address ? <button className="btn ghost sm" onClick={s.disconnect}>Disconnect</button> : <button className="btn sm" disabled={s.connecting} onClick={() => s.connect().catch(() => {})}>{s.connecting ? "Check your wallet" : "Connect wallet"}</button>}
-            {s.address && !s.verified && s.role === "creator" && <button className="btn sm" onClick={() => setWorld(true)}>Verify with World ID</button>}
+            {s.address && !s.verified && s.role === "creator" && <button className="btn sm" onClick={() => setWorld(true)}>Verify with World ID (Proof of Human)</button>}
           </div>
+          {s.address && !s.verified && s.role === "creator" && <WhyProofOfHuman />}
+          {noCred && <CredentialUnavailable />}
           {fail && <p className="notice warn" role="alert"><b>Not verified.</b>{fail}</p>}
         </section>
 
@@ -79,7 +84,7 @@ export function AccountView() {
           {s.notice && <p className="notice warn" role="status">{s.notice}</p>}
         </section>
       </div>
-      {world && <WorldCheck kind="proof-of-human" purpose="Prove you are a unique human" onResult={result} />}
+      {world && <WorldCheck kind="proof-of-human" purpose="Prove you are a unique human (Proof of Human)" onResult={result} />}
     </div>
   );
 }

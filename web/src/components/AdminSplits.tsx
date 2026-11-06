@@ -1,11 +1,12 @@
 "use client";
 import { useState } from "react";
 import type { Campaign } from "@/ui-mocks/data";
-import { agentPass, api, errText, type AgentProposalView, type SplitProposal, type WorldProof } from "./api";
-import { useAsync, useEscrow } from "./hooks";
+import { agentPass, api, errText, type AgentProposalView, type SplitProposal } from "./api";
+import { useAsync } from "./hooks";
 import { Correction, Empty, Loading } from "./Bits";
 import { money } from "./format";
-import { WorldCheck, worldFailText, type WorldResult } from "./WorldCheck";
+import { StepUpApprove, StepUpReturnPanel } from "./StepUpApprove";
+import type { SplitResult } from "./hooks";
 import { AgentPassPanel, ProposalReasons } from "./AgentPassPanel";
 
 /**
@@ -14,7 +15,6 @@ import { AgentPassPanel, ProposalReasons } from "./AgentPassPanel";
  */
 export function AdminSplits() {
   const q = useAsync(api.campaigns);
-  const escrow = useEscrow();
   const [review, setReview] = useState<{ c: Campaign; p: AgentProposalView } | null>(null);
   const [res, setRes] = useState<Record<string, { p: SplitProposal; tx: string | null }>>({});
   const [err, setErr] = useState("");
@@ -37,22 +37,11 @@ export function AdminSplits() {
     }
   }
 
-  async function done(r: WorldResult, proof?: WorldProof, message?: string) {
-    const rv = review;
+  /** Back from the World ID step-up redirect: the panel already posted the release for this admin; show the result. */
+  function settled(out: SplitResult | null, attempt: { campaignId: string } | null) {
     setReview(null);
-    setErr("");
-    if (rv && (r === "cancelled" || r === "expired" || r === "failed")) {
-      void agentPass.reportCheck(rv.c.id, r === "cancelled" ? "CANCELLED" : r === "expired" ? "EXPIRED" : "FAILED", rv.p.id, rv.p.splitHash, message).then(() => setPanelKey((k) => k + 1));
-    }
-    if (r !== "verified" || !proof || !rv) return setErr(`Split not approved. ${worldFailText(null, r, message)}`);
-    try {
-      const out = await escrow.approveSplit(rv.c.id, rv.p.splits, proof, rv.p.id);
-      setRes((x) => ({ ...x, [rv.c.id]: { p: out.proposal, tx: out.txHash } }));
-    } catch (e) {
-      setErr(`Split not approved. ${worldFailText(e)}`);
-    } finally {
-      setPanelKey((k) => k + 1);
-    }
+    setPanelKey((k) => k + 1);
+    if (out && attempt) setRes((x) => ({ ...x, [attempt.campaignId]: { p: out.proposal, tx: out.txHash } }));
   }
 
   if (q.status === "loading") return <Loading rows={3} label="Finding splits waiting on you" />;
@@ -60,6 +49,7 @@ export function AdminSplits() {
   const list = q.data.filter((c) => c.status === "live" && c.mode === "human_split" && c.approver === "me_and_admin");
   return (
     <div className="stack" style={{ gap: 28 }}>
+      <StepUpReturnPanel onSettled={settled} />
       {err && <p className="notice warn" role="alert"><b>Nothing changed.</b>{err}</p>}
       {list.length === 0 ? (
         <Empty title="No splits waiting.">Two-party splits appear here once the campaigner has an approved clip to pay.</Empty>
@@ -80,10 +70,19 @@ export function AdminSplits() {
           })}
         </ol>
       )}
-      <p className="muted" style={{ fontSize: "0.875rem" }}>The agent only proposes. Your World ID check is bound to the exact split hash; if the split changed, expired, or the check is cancelled, expired or reused, nothing happens and it is logged below.</p>
+      <p className="muted" style={{ fontSize: "0.875rem" }}>The agent only proposes. Your World ID check is bound to the exact split hash; if the split changed, expired, or the check is cancelled, expired or fails, nothing is approved, no payout occurs, and it is logged below.</p>
       <AgentPassPanel title="Agent Pass activity (all campaigns)" refreshKey={panelKey} />
       {review && <ProposalReasons p={review.p} />}
-      {review && <WorldCheck key={review.p.id} kind="agent-pass" action="clippo-approve-split" signal={`split:${review.c.id}:${review.p.splitHash}`} purpose="Confirm you approve the agent's split" onResult={done} />}
+      {review && (
+        <div className="notice" role="region" aria-label="Agent Pass gate">
+          <b>Agent Pass gate: World ID step-up (admin)</b>
+          <span>You will leave for World ID for a fresh Orb-class check on your own account, then return here. The check is bound to this exact split; if it changes, expires or the check fails, nothing is approved and no payout occurs.</span>
+          <div className="row">
+            <StepUpApprove key={review.p.id} campaignId={review.c.id} splits={review.p.splits.map((s) => ({ creatorWallet: s.creatorWallet, amount: s.amount }))} agentProposalId={review.p.id} onError={() => setPanelKey((k) => k + 1)} />
+            <button className="btn ghost sm" onClick={() => setReview(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

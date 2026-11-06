@@ -2,26 +2,25 @@
 /* The real World ID widget (@worldcoin/idkit v4 IDKitRequestWidget). Loaded only on the client by WorldCheck.
    v4 needs an RP context signed by the backend (the signing key never reaches the browser): we ask `rpContext()` for a
    fresh one per check, so every check, approver and action gets its own nonce. The widget reports a proof or a failure
-   kind. It never decides anything: the caller sends the proof to the backend, which verifies it. */
+   kind. It never decides anything: the caller sends the proof to the backend, which verifies it.
+
+   WHY PROOF OF HUMAN (credential rationale)
+   Trust event: creator account sign-up. It unlocks channel proof, deals, submissions and claims, i.e. the place where
+   USDC can be paid out. Risk: one person farming many creator accounts to collect multiple payouts (sybil).
+   Proof of Human is the minimum credential that gives per-human uniqueness: one nullifier per human per action, stored
+   unique in User.worldIdNullifier. Selfie Check would show "a live person" but not one-human-one-payout-account
+   uniqueness. Passport/NFC proves a document attribute, not cross-population uniqueness. We claim no more than that:
+   it limits duplicate accounts, it does not prove the person is honest or that their views are real.
+   Release approvals need freshness/assurance rather than uniqueness and are gated separately (auth.world.org step-up).
+   The preset includes a legacy Orb fallback, hence allow_legacy_proofs stays on. */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { IDKitErrorCodes, IDKitRequestWidget, orbLegacy, deviceLegacy, type IDKitResult, type RpContext } from "@worldcoin/idkit";
+import { IDKitRequestWidget, proofOfHuman, type IDKitResult, type RpContext } from "@worldcoin/idkit";
 import { ApiError } from "./api";
+import { failOf, type SheetFail } from "../lib/worldid/errors";
 
 export type SheetProof = { nullifier_hash: string; proof: string; merkle_root?: string; verification_level?: string; idkitResult: IDKitResult };
-export type SheetFail = { kind: "cancelled" | "expired" | "repeated" | "failed" | "unconfigured"; message: string };
+export type { SheetFail };
 type SignedCtx = RpContext & { app_id: string; action?: string; environment?: "production" | "staging" | "sandbox" };
-
-const FAIL_OF: Partial<Record<IDKitErrorCodes, SheetFail>> = {
-  [IDKitErrorCodes.VerificationRejected]: { kind: "cancelled", message: "You declined the request in World App." },
-  [IDKitErrorCodes.UserRejected]: { kind: "cancelled", message: "You declined the request in World App." },
-  [IDKitErrorCodes.Cancelled]: { kind: "cancelled", message: "You cancelled the check." },
-  [IDKitErrorCodes.MaxVerificationsReached]: { kind: "repeated", message: "World ID says this check was already used the maximum number of times for this action." },
-  [IDKitErrorCodes.NullifierReplayed]: { kind: "repeated", message: "World ID says this proof was already used." },
-  [IDKitErrorCodes.ConnectionFailed]: { kind: "expired", message: "The connection to World App dropped before the check finished." },
-  [IDKitErrorCodes.Timeout]: { kind: "expired", message: "The check timed out before it finished." },
-  [IDKitErrorCodes.RpSignatureExpired]: { kind: "expired", message: "The check request expired before it was answered." },
-  [IDKitErrorCodes.CredentialUnavailable]: { kind: "failed", message: "Your World ID does not have the credential this check needs." },
-};
 
 /** Pull the legacy (v3) fields out of an IDKit result so a v2-style verifier can read them; v4 results travel whole in `idkitResult`. */
 function toProof(r: IDKitResult): SheetProof {
@@ -43,7 +42,7 @@ async function fetchRpContext(action: string): Promise<SignedCtx> {
   return body.rpContext as SignedCtx;
 }
 
-export default function IDKitSheet({ action, level, signal, onProof, onFail }: { action: string; level: "orb" | "device"; signal?: string; onProof: (p: SheetProof) => void; onFail: (f: SheetFail) => void }) {
+export default function IDKitSheet({ action, signal, onProof, onFail }: { action: string; signal?: string; onProof: (p: SheetProof) => void; onFail: (f: SheetFail) => void }) {
   const [ctx, setCtx] = useState<SignedCtx | null>(null);
   const [open, setOpen] = useState(true);
   const settled = useRef(false);
@@ -85,14 +84,14 @@ export default function IDKitSheet({ action, level, signal, onProof, onFail }: {
       environment={ctx.environment}
       rp_context={ctx}
       allow_legacy_proofs
-      preset={level === "device" ? deviceLegacy({ signal }) : orbLegacy({ signal })}
+      preset={proofOfHuman({ signal })}
       autoClose
       onSuccess={(r) => {
         if (settled.current) return;
         settled.current = true;
         onProof(toProof(r));
       }}
-      onError={(code) => fail(FAIL_OF[code] ?? { kind: "failed", message: `World ID could not complete the check (${code}).` })}
+      onError={(code) => fail(failOf(code))}
     />
   );
 }
