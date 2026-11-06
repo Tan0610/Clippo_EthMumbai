@@ -23,7 +23,7 @@ export interface LatestSnapshot {
  */
 export async function latestPerSubmission(asOfDay?: string) {
   const rows = await db.viewSnapshot.findMany({
-    where: { ...(asOfDay ? { day: { lte: asOfDay } } : {}), campaign: { status: "APPROVED" }, submission: { clipStatus: "LIVE", verdict: { result: "APPROVE" } } },
+    where: { ...(asOfDay ? { day: { lte: asOfDay } } : {}), campaign: { status: "APPROVED", payoutMode: { in: ["PER_VIEW", "POOL_SHARE"] } }, submission: { clipStatus: "LIVE", verdict: { result: "APPROVE" } } },
     orderBy: [{ day: "desc" }, { createdAt: "desc" }],
     include: { campaign: { select: { onchainId: true } }, submission: { select: { creator: { select: { wallet: true } } } } },
   });

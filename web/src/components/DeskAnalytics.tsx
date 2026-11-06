@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useState } from "react";
 import { mk } from "./api";
+import { ConfirmedNote, ConfirmedViews, hasConfirmed } from "./ConfirmedViews";
 import { useAsync } from "./hooks";
 import { Correction, DemoNote, Empty, Loading, TickBar } from "./Bits";
 import { compact, money, whole } from "./format";
@@ -19,7 +20,7 @@ export function DailyChart({ days }: { days: DailyPoint[] }) {
   const ticks = [0, 0.5, 1];
   return (
     <figure className="stack" style={{ gap: 8 }}>
-      <svg className="daily" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Verified views per day over ${days.length} days. Peak ${whole(days[peak].views)} on ${days[peak].day}.`}>
+      <svg className="daily" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Views per day (Clippo count) over ${days.length} days. Peak ${whole(days[peak].views)} on ${days[peak].day}.`}>
         {ticks.map((t) => {
           const y = H - B - t * (H - B - T);
           return (
@@ -37,7 +38,7 @@ export function DailyChart({ days }: { days: DailyPoint[] }) {
         <text x={L} y={H - 8}>{days[0].day.slice(5)}</text>
         <text x={W} y={H - 8} textAnchor="end">{days[days.length - 1].day.slice(5)}</text>
       </svg>
-      <figcaption className="micro">Verified views per day. Peak day in orange: {days[peak].day.slice(5)}, {whole(days[peak].views)}.</figcaption>
+      <figcaption className="micro">Views per day, Clippo count. Peak day in orange: {days[peak].day.slice(5)}, {whole(days[peak].views)}.</figcaption>
     </figure>
   );
 }
@@ -86,12 +87,14 @@ function One({ c }: { c: DeskCampaign }) {
         <div className="stack" style={{ gap: 10 }}>
           <span className="micro">Cost per 1,000 views</span>
           <div className="fig-xl" style={{ fontSize: "2.4rem" }}>{cp(c.cpm1k)}</div>
-          <span className="muted" style={{ fontSize: "0.875rem" }}>Spend divided by verified views on approved clips.</span>
+          <span className="muted" style={{ fontSize: "0.875rem" }}>Spend divided by Clippo-counted views on approved clips.</span>
         </div>
       </div>
 
+      {hasConfirmed(c.mode) && <ConfirmedViews variant="line" label="Confirmed views, this campaign" confirmed={c.confirmedViews} pending={c.pendingViews} clippo={c.views} proof={c.proof} />}
+
       <div className="stack" style={{ gap: 8 }}>
-        <span className="micro">Daily views</span>
+        <span className="micro">Daily views, Clippo count</span>
         {daily.status === "loading" && <Loading label="Pulling the daily count" rows={3} />}
         {daily.status === "error" && <Correction what="Daily views did not load." cause={daily.error} onRetry={daily.retry} />}
         {daily.status === "ready" && <DailyChart days={daily.data} />}
@@ -112,7 +115,7 @@ function One({ c }: { c: DeskCampaign }) {
                   <th scope="col" className="n">Clips</th>
                   <th scope="col" className="n">Approved</th>
                   <th scope="col" className="n">Rejected</th>
-                  <th scope="col" className="n">Views</th>
+                  <th scope="col" className="n">Clippo views</th>
                   <th scope="col" className="n">Cost, USDC</th>
                   <th scope="col" className="n">Per 1K</th>
                 </tr>
@@ -124,7 +127,7 @@ function One({ c }: { c: DeskCampaign }) {
                     <td className="n" data-l="Clips">{r.clips}</td>
                     <td className="n" data-l="Approved">{r.approved}</td>
                     <td className="n" data-l="Rejected">{r.rejected}</td>
-                    <td className="n" data-l="Views">{compact(r.views)}</td>
+                    <td className="n" data-l="Clippo views">{compact(r.views)}</td>
                     <td className="n" data-l="Cost, USDC">{money(r.paid)}</td>
                     <td className="n" data-l="Per 1K">{r.cpm1k === null ? "–" : `$${money(r.cpm1k)}`}</td>
                   </tr>
@@ -138,8 +141,10 @@ function One({ c }: { c: DeskCampaign }) {
   );
 }
 
-export function DeskAnalytics() {
-  const d = useAsync(mk.deskDash);
+/** The desk dashboard request, loaded once by the page and shared with the campaign table. */
+export type DeskDash = ReturnType<typeof useAsync<DeskData>>;
+
+export function DeskAnalytics({ dash: d }: { dash: DeskDash }) {
   const [sel, setSel] = useState<string | null>(null);
 
   if (d.status === "loading") return <Loading label="Adding up the books" rows={4} />;
@@ -148,6 +153,8 @@ export function DeskAnalytics() {
   if (data.campaigns.length === 0) return null;
   const chosen = data.campaigns.find((c) => c.campaignId === sel) ?? data.campaigns[0];
   const t = data.totals;
+  const cre = data.campaigns.filter((c) => hasConfirmed(c.mode));
+  const creClippo = cre.reduce((a, c) => a + c.views, 0);
 
   return (
     <section className="stack-lg" aria-labelledby="numbers" style={{ marginBottom: 56 }}>
@@ -159,10 +166,15 @@ export function DeskAnalytics() {
       <dl className="stats">
         <div><dt className="micro">Budget</dt><dd className="fig">${money(t.budget, 0)}</dd></div>
         <div><dt className="micro">Spend</dt><dd className="fig">${money(t.spend)}</dd></div>
-        <div><dt className="micro">Verified views</dt><dd className="fig">{compact(t.views)}</dd></div>
+        {cre.length > 0 ? (
+          <ConfirmedViews variant="stat" confirmed={t.confirmedViews} pending={t.pendingViews} clippo={creClippo} />
+        ) : (
+          <div><dt className="micro">Views, Clippo count</dt><dd className="fig">{compact(t.views)}</dd></div>
+        )}
         <div><dt className="micro">Per 1K views</dt><dd className="fig">{cp(t.cpm1k)}</dd></div>
         <div><dt className="micro">Approved / rejected</dt><dd className="fig">{t.approved}<small>/</small>{t.rejected}</dd></div>
       </dl>
+      {cre.length > 0 && <ConfirmedNote />}
 
       <div className="stack">
         <div className="row-between">

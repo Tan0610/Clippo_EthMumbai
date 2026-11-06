@@ -33,8 +33,9 @@ export const POST = route(async (req: Request, { params }: Ctx) => {
     if (!att) {
       throw new ApiError(428, "HUMAN_CONFIRMATION_REQUIRED", "High-value campaign: POST /api/campaigns/:id/attest with a fresh World ID proof first");
     }
-    if (chainMode() === "chain" && cur.approvalAttestation?.toLowerCase() !== att.attestation.toLowerCase()) {
-      throw new ApiError(409, "ATTESTATION_MISMATCH", "The on-chain approval attestation does not match the recorded human confirmation");
+    // The contract verified the signed proof when it approved; it must be on record there.
+    if (chainMode() === "chain" && (!cur.approvalAttestation || /^0x0+$/.test(cur.approvalAttestation))) {
+      throw new ApiError(409, "ATTESTATION_MISMATCH", "The on-chain approval has no human attestation");
     }
   }
   const updated = await db.campaign.update({ where: { id: cur.id }, data: { status: "APPROVED", rejectReason: null, adminReviewReason: null } });

@@ -1,4 +1,4 @@
-// NOT the CRE simulator. Fallback evidence for when `cre login` is unavailable: runs the SAME fetch -> normalise ->
+// NOT the CRE simulator (use scripts/simulate-local.sh for that). CLI-free supporting evidence: runs the SAME fetch -> normalise ->
 // chunk -> ABI-encode code path as the workflow (snapshot.ts) against the mock backend, then delivers each report to
 // ClippoReportReceiver through the real Arc-testnet MockKeystoneForwarder (present on the anvil fork), exactly the
 // contract call the CRE simulator's --broadcast makes. Prints the escrow credit.

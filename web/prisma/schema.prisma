@@ -79,6 +79,8 @@ model User {
   role             Role
   wallet           String       @unique
   worldIdNullifier String?      @unique
+  /// LEGACY, unused. Added by migration 20261106000000_world_idp_identity (already applied on the clippo-cre database). Kept so the schema matches the database; the step-up now uses worldAuthIss / worldAuthSub.
+  worldIdpIdentity String?      @unique
   verified         Boolean      @default(false)
   worldAuthIss     String? // auth.world.org issuer + pairwise sub bound at first successful step-up (identity pin)
   worldAuthSub     String?
@@ -87,6 +89,7 @@ model User {
   campaigns        Campaign[]
   submissions      Submission[]
   payouts          Payout[]
+  viewsReports     ViewsReport[]
 
   @@unique([worldAuthIss, worldAuthSub])
 }
@@ -142,6 +145,7 @@ model Campaign {
   submissions    Submission[]
   snapshots      ViewSnapshot[]
   payouts        Payout[]
+  viewsReports   ViewsReport[]
 }
 
 model Submission {
@@ -214,6 +218,27 @@ model Payout {
   releaseAt     DateTime? // PER_VIEW retention: earliest time the latest credit is claimable
   frozen        Boolean   @default(false) // deleted clip / fraud hold: claims refused by the API
   frozenReason  String?
+}
+
+// One row per on-chain ViewsReported event: the views the Chainlink CRE workflow reported for a creator in a campaign.
+// "Confirmed" views = the highest cumulativeViews per (campaign, creator). Append-only; filled only by the chain indexer.
+model ViewsReport {
+  id              String   @id @default(cuid())
+  campaignId      String
+  campaign        Campaign @relation(fields: [campaignId], references: [id])
+  creatorId       String
+  creator         User     @relation(fields: [creatorId], references: [id])
+  cumulativeViews Int
+  deltaViews      Int
+  credited        Float // USDC credited by this report (0 for a no-op or PoolShare weight update)
+  txHash          String
+  logIndex        Int
+  blockNumber     Int
+  reportedAt      DateTime
+  createdAt       DateTime @default(now())
+
+  @@unique([txHash, logIndex])
+  @@index([campaignId, creatorId, cumulativeViews])
 }
 
 // ===== Wallet sign-in, chain sync, human attestations, split approvals, fraud flags (chain/trust agent) =====

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { ApiError, DEMO, asApiError, agentPass, errText, getStepUpAttempt, startStepUp, type ApiStepUpAttempt } from "./api";
-import { chainFor, connectWallet, getChainConfig, readClient } from "@/lib/chain/client";
+import { chainFor, chainProof, connectWallet, getChainConfig, readClient } from "@/lib/chain/client";
 import { escrowAbi } from "@/lib/chain/escrow-abi";
 import type { SplitResult } from "./hooks";
 
@@ -116,7 +116,7 @@ async function release(a: ApiStepUpAttempt, id: string): Promise<{ res: SplitRes
   if (!cfg.enabled || !cfg.escrow) return { res: { proposal: r.proposal, attestation: r.attestation, txHash: null }, stage: "ok" };
   const { address, wallet } = await connectWallet(cfg);
   const x = r.onchain.args;
-  const txHash = await wallet.writeContract({ account: address, chain: chainFor(cfg), address: cfg.escrow, abi: escrowAbi, functionName: "approveSplit", args: [BigInt(x.id), x.creators, x.amounts.map((v) => BigInt(v)), x.attestation] });
+  const txHash = await wallet.writeContract({ account: address, chain: chainFor(cfg), address: cfg.escrow, abi: escrowAbi, functionName: "approveSplit", args: [BigInt(x.id), x.creators, x.amounts.map((v) => BigInt(v)), chainProof(x.proof)] });
   await readClient(cfg).waitForTransactionReceipt({ hash: txHash });
   return { res: { proposal: r.proposal, attestation: r.attestation, txHash }, stage: "ok" };
 }

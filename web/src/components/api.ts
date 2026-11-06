@@ -8,10 +8,13 @@ import { connectAndSignIn, hasWallet, loadChain } from "./wallet";
 import {
   adminQueue as mockQueue,
   campaigns as mockCampaigns,
+  demoConfirmed,
   earnings as mockEarnings,
   mySubmissions as mockSubs,
   type Campaign,
   type CampaignStatus,
+  type ConfirmedFields,
+  type Proof,
   type EarningsData,
   type PayMode,
   type Platform,
@@ -130,12 +133,36 @@ type ApiSub = {
   campaign?: { id: string; title: string };
 };
 
+/* ---------- CRE confirmed views (docs/CRE_SCOPE.md section 2) ----------
+   Every field is optional: an older backend omits them, and then the UI treats confirmed as 0 and shows nothing more. */
+type ApiConfirmed = { confirmedViews?: unknown; pendingViews?: unknown; proof?: unknown };
+const finite = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? Math.max(0, v) : undefined);
+function adaptProof(p: unknown): Proof | undefined {
+  if (p === null) return null;
+  if (!p || typeof p !== "object") return undefined;
+  const o = p as Record<string, unknown>;
+  if (typeof o.txHash !== "string" || typeof o.explorerUrl !== "string") return null;
+  return { txHash: o.txHash, blockNumber: finite(o.blockNumber) ?? 0, reportedAt: typeof o.reportedAt === "string" ? o.reportedAt : "", explorerUrl: o.explorerUrl };
+}
+/** Copies only the CRE fields the server actually sent. */
+export function adaptConfirmed(c: ApiConfirmed | null | undefined): ConfirmedFields {
+  const out: ConfirmedFields = {};
+  if (!c) return out;
+  const confirmedViews = finite(c.confirmedViews);
+  const pendingViews = finite(c.pendingViews);
+  const proof = adaptProof(c.proof);
+  if (confirmedViews !== undefined) out.confirmedViews = confirmedViews;
+  if (pendingViews !== undefined) out.pendingViews = pendingViews;
+  if (proof !== undefined) out.proof = proof;
+  return out;
+}
+
 const short = (w: string) => (w.length > 12 ? `${w.slice(0, 6)}…${w.slice(-4)}` : w);
 const day = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 const MODE: Record<ApiCampaign["payoutMode"], PayMode> = { PER_VIEW: "per_view", HUMAN_SPLIT: "human_split", POOL_SHARE: "pool_share" };
 const STATUS: Record<ApiCampaign["status"], CampaignStatus> = { DRAFT: "awaiting_funds", FUNDED: "pending_admin", APPROVED: "live", REJECTED: "rejected", CLOSED: "closed" };
 
-export function adaptCampaign(c: ApiCampaign, perf?: { totalViews: number; approvedClips: number }): Campaign {
+export function adaptCampaign(c: ApiCampaign, perf?: { totalViews: number; approvedClips: number } & ApiConfirmed): Campaign {
   const views = perf?.totalViews ?? 0;
   const rate = c.ratePer1k ?? 0;
   const paid = c.payoutMode === "PER_VIEW" ? Math.min(c.poolSize, (views / 1000) * rate) : 0;
@@ -169,6 +196,7 @@ export function adaptCampaign(c: ApiCampaign, perf?: { totalViews: number; appro
     highValue: !!c.highValue,
     campaignerFee: c.campaignerFee ?? null,
     rejectReason: c.rejectReason,
+    ...adaptConfirmed(perf),
   };
 }
 
@@ -249,14 +277,17 @@ export const api = {
     withFallback(
       async () => {
         try {
-          const r = await req<{ campaign: ApiCampaign; performance: { totalViews: number; approvedClips: number } }>(`/campaigns/${id}`);
+          const r = await req<{ campaign: ApiCampaign; performance: { totalViews: number; approvedClips: number } & ApiConfirmed }>(`/campaigns/${id}`);
           return adaptCampaign(r.campaign, r.performance);
         } catch (e) {
           if (e instanceof ApiError && e.status === 404) return null;
           throw e;
         }
       },
-      () => mockCampaigns.find((c) => c.id === id) ?? null,
+      () => {
+        const c = mockCampaigns.find((x) => x.id === id);
+        return c ? { ...c, ...demoConfirmed(c.views, c.mode) } : null;
+      },
     ),
   myCampaigns: () =>
     withFallback(
@@ -281,7 +312,7 @@ export const api = {
     withFallback(
       async (): Promise<EarningsData> => {
         const r = await req<{
-          campaigns: { campaignId: string; title: string; payoutMode: ApiCampaign["payoutMode"]; approvedClips: number; views: number; estimatedEarnings: number | null }[];
+          campaigns: ({ campaignId: string; title: string; payoutMode: ApiCampaign["payoutMode"]; approvedClips: number; views: number; estimatedEarnings: number | null } & ApiConfirmed)[];
           payouts: { id: string; campaignId: string; amount: number; claimedAmount?: number; status: "PENDING" | "CLAIMED"; claimTxHash: string | null; createdAt: string; frozen?: boolean; frozenReason?: string | null; releaseAt?: string | null }[];
           totals: { estimated: number; claimable: number; claimed: number; frozen?: number };
           fees?: { creatorBps: number; retentionDays: number };
@@ -301,7 +332,7 @@ export const api = {
             frozenReason: p.frozenReason ?? null,
             releaseAt: p.releaseAt ?? null,
           })),
-          estimates: r.campaigns.map((c) => ({ campaignId: c.campaignId, title: c.title, mode: MODE[c.payoutMode], approvedClips: c.approvedClips, views: c.views, est: c.estimatedEarnings })),
+          estimates: r.campaigns.map((c) => ({ campaignId: c.campaignId, title: c.title, mode: MODE[c.payoutMode], approvedClips: c.approvedClips, views: c.views, est: c.estimatedEarnings, ...adaptConfirmed(c) })),
           totals: r.totals,
           fees: r.fees,
         };
@@ -449,6 +480,11 @@ export const agentPass = {
         ),
 };
 
+/** A creator channel. `verificationCode` is `clippo:<wallet lowercase>`; `needsReverify` marks channels still on the old code format. */
+export type ChannelRec = { id: string; platform: string; handle: string; verified: boolean; verificationCode?: string; needsReverify?: boolean };
+/** The channel code shown in demo mode only (same shape as the real one, built from the demo creator wallet). */
+const DEMO_CODE = `clippo:${DEMO_WALLETS.CREATOR.toLowerCase()}`;
+
 /* ---------- World ID step-up (auth.world.org OIDC): full-page redirect, so the UI resumes from a server-side attempt ---------- */
 export type StepUpOperation = "SPLIT_RELEASE";
 export type ApiStepUpStart = { attemptId: string; authorizeUrl: string; expiresAt: string };
@@ -466,7 +502,7 @@ export type ApiStepUpAttempt = {
 export type ApiSplitRelease = {
   proposal: SplitProposal;
   attestation: `0x${string}` | string;
-  onchain: { functionName: "approveSplit"; args: { id: string; creators: `0x${string}`[]; amounts: string[]; attestation: `0x${string}` } } | null;
+  onchain: { functionName: "approveSplit"; args: { id: string; creators: `0x${string}`[]; amounts: string[]; proof: { human: `0x${string}`; expiresAt: string; signature: `0x${string}` } } } | null;
 };
 
 const DEMO_ATTEMPT = "demo-";
@@ -547,8 +583,8 @@ export const actions = {
   /** Admin: fresh single-use World ID proof for approving a (high-value) FUNDED campaign. Returns the attestation to pass to approveCampaign. */
   attest: (id: string, worldIdProof: WorldProof) =>
     withFallback(
-      () => req<{ attestation: `0x${string}`; highValue: boolean; onchain: { functionName: "approveCampaign"; args: unknown[] } | null }>(`/campaigns/${id}/attest`, { json: { worldIdProof: wireProof(worldIdProof) } }),
-      () => ({ attestation: ("0x" + "0".repeat(64)) as `0x${string}`, highValue: true, onchain: null }),
+      () => req<{ attestation: `0x${string}`; proof: { human: `0x${string}`; expiresAt: string; signature: `0x${string}` } | null; highValue: boolean; onchain: { functionName: "approveCampaign"; args: unknown[] } | null }>(`/campaigns/${id}/attest`, { json: { worldIdProof: wireProof(worldIdProof) } }),
+      () => ({ attestation: ("0x" + "0".repeat(64)) as `0x${string}`, proof: null, highValue: true, onchain: null }),
     ),
   /* API-only legs: used when the escrow chain is not configured (the server then decides) or after the on-chain tx, via lib/chain/client.ts */
   approveCampaign: (id: string, txHash?: string) => withFallback(() => req(`/campaigns/${id}/approve`, { json: txHash ? { txHash } : {} }), () => pause(300)),
@@ -578,10 +614,10 @@ export const actions = {
     }),
   channels: () =>
     withFallback(
-      () => req<{ channels: { id: string; platform: string; handle: string; verified: boolean }[] }>("/channels").then((r) => r.channels),
-      () => [
-        { id: "m1", platform: "YOUTUBE", handle: "@mara.reels", verified: true },
-        { id: "m2", platform: "YOUTUBE", handle: "@mara.clips", verified: true },
+      (): Promise<ChannelRec[]> => req<{ channels: ChannelRec[] }>("/channels").then((r) => r.channels),
+      (): ChannelRec[] => [
+        { id: "m1", platform: "YOUTUBE", handle: "@mara.reels", verified: true, verificationCode: DEMO_CODE, needsReverify: false },
+        { id: "m2", platform: "YOUTUBE", handle: "@mara.clips", verified: true, verificationCode: "CLP-MAR-7K3Q", needsReverify: true },
       ],
     ),
 };
@@ -774,7 +810,17 @@ export const extActions = {
     extReq(
       "/channels",
       () => req<{ channel: { id: string; verificationCode: string; verified: boolean; handle: string } }>("/channels", { json: { platform: platform.toUpperCase(), handle } }).then((r) => r.channel),
-      () => ({ id: "demo-ch", handle, verified: false, verificationCode: `CLP-${handle.replace(/\W/g, "").slice(0, 3).toUpperCase().padEnd(3, "X")}-7K3Q` }),
+      () => ({ id: "demo-ch", handle, verified: false, verificationCode: DEMO_CODE }),
+    ),
+  /* old-format channel: rotate to the wallet-bound code. The channel is unverified until the bio check passes again. */
+  channelUpgrade: (id: string, handle: string) =>
+    extReq(
+      `/channels/${id}/upgrade-code`,
+      () => req<{ channel: { id: string; verificationCode: string; verified: boolean; handle: string } }>(`/channels/${id}/upgrade-code`, { json: {} }).then((r) => r.channel),
+      async () => {
+        await pause(400);
+        return { id, handle, verified: false, verificationCode: DEMO_CODE };
+      },
     ),
   channelVerify: (id: string, platform: LinkPlatform, attempt: number) =>
     extReq(
@@ -1217,18 +1263,18 @@ export const mk = {
     withFallback(
       async (): Promise<DeskData> => {
         const r = await req<{
-          campaigns: { campaignId: string; title: string; status: string; payoutMode: string; budget: number; spend: number; allocated: number; remaining: number; views: number; clips: { approved: number; rejected: number; pendingReview: number }; costPer1kViews: number | null }[];
-          totals: { campaigns: number; budget: number; spend: number; views: number; approvedClips: number; rejectedClips: number; pendingReviewClips: number; costPer1kViews: number | null };
+          campaigns: ({ campaignId: string; title: string; status: string; payoutMode: string; budget: number; spend: number; allocated: number; remaining: number; views: number; clips: { approved: number; rejected: number; pendingReview: number }; costPer1kViews: number | null } & ApiConfirmed)[];
+          totals: { campaigns: number; budget: number; spend: number; views: number; approvedClips: number; rejectedClips: number; pendingReviewClips: number; costPer1kViews: number | null } & ApiConfirmed;
         }>("/dashboard/campaigner");
         return {
-          campaigns: r.campaigns.map((c) => ({ campaignId: c.campaignId, title: c.title, status: c.status, mode: c.payoutMode, budget: n0(c.budget), spend: n0(c.spend), allocated: n0(c.allocated), remaining: n0(c.remaining), views: n0(c.views), approved: n0(c.clips?.approved), rejected: n0(c.clips?.rejected), pending: n0(c.clips?.pendingReview), cpm1k: nn(c.costPer1kViews) })),
-          totals: { campaigns: n0(r.totals.campaigns), budget: n0(r.totals.budget), spend: n0(r.totals.spend), views: n0(r.totals.views), approved: n0(r.totals.approvedClips), rejected: n0(r.totals.rejectedClips), pending: n0(r.totals.pendingReviewClips), cpm1k: nn(r.totals.costPer1kViews) },
+          campaigns: r.campaigns.map((c) => ({ campaignId: c.campaignId, title: c.title, status: c.status, mode: c.payoutMode, budget: n0(c.budget), spend: n0(c.spend), allocated: n0(c.allocated), remaining: n0(c.remaining), views: n0(c.views), approved: n0(c.clips?.approved), rejected: n0(c.clips?.rejected), pending: n0(c.clips?.pendingReview), cpm1k: nn(c.costPer1kViews), ...adaptConfirmed(c) })),
+          totals: { campaigns: n0(r.totals.campaigns), budget: n0(r.totals.budget), spend: n0(r.totals.spend), views: n0(r.totals.views), approved: n0(r.totals.approvedClips), rejected: n0(r.totals.rejectedClips), pending: n0(r.totals.pendingReviewClips), cpm1k: nn(r.totals.costPer1kViews), confirmedViews: finite(r.totals.confirmedViews), pendingViews: finite(r.totals.pendingViews) },
         };
       },
       (): DeskData => {
         const rows: DeskCampaign[] = mockCampaigns
           .filter((c) => ["c-ledgerlane", "c-fieldnotes"].includes(c.id))
-          .map((c) => ({ campaignId: c.id, title: c.title, status: "APPROVED", mode: c.mode, budget: c.pool, spend: c.paid, allocated: c.paid, remaining: c.pool - c.paid, views: c.views, approved: c.clips, rejected: Math.ceil(c.clips / 4), pending: 1, cpm1k: c.views ? (c.paid / c.views) * 1000 : null }));
+          .map((c) => ({ campaignId: c.id, title: c.title, status: "APPROVED", mode: c.mode, budget: c.pool, spend: c.paid, allocated: c.paid, remaining: c.pool - c.paid, views: c.views, approved: c.clips, rejected: Math.ceil(c.clips / 4), pending: 1, cpm1k: c.views ? (c.paid / c.views) * 1000 : null, ...demoConfirmed(c.views, c.mode) }));
         return { campaigns: rows, totals: mockDeskTotals(rows) };
       },
     ),
@@ -1271,21 +1317,21 @@ export const mk = {
         const r = await req<{
           verifiedBadge: boolean;
           rank: { approved: number; rejected: number; pending: number; reliability: number; tier: string; rank: number };
-          totals: { views: number; clipsSubmitted: number; approvedClips: number; rejectedClips: number; pendingReviewClips: number; activeHires: number; estimated: number; claimable: number; claimed: number };
-          campaigns: { campaignId: string; title: string; payoutMode: string; approvedClips: number; views: number; estimatedEarnings: number | null }[];
+          totals: { views: number; clipsSubmitted: number; approvedClips: number; rejectedClips: number; pendingReviewClips: number; activeHires: number; estimated: number; claimable: number; claimed: number } & ApiConfirmed;
+          campaigns: ({ campaignId: string; title: string; payoutMode: string; approvedClips: number; views: number; estimatedEarnings: number | null } & ApiConfirmed)[];
         }>("/dashboard/creator");
         return {
           verified: r.verifiedBadge,
           rank: { ...r.rank, tier: tierOf(r.rank.tier) ?? "NEW" },
-          totals: { views: n0(r.totals.views), submitted: n0(r.totals.clipsSubmitted), approved: n0(r.totals.approvedClips), rejected: n0(r.totals.rejectedClips), pending: n0(r.totals.pendingReviewClips), hires: n0(r.totals.activeHires), estimated: n0(r.totals.estimated), claimable: n0(r.totals.claimable), claimed: n0(r.totals.claimed) },
-          campaigns: r.campaigns.map((c) => ({ campaignId: c.campaignId, title: c.title, mode: c.payoutMode, approvedClips: c.approvedClips, views: c.views, est: c.estimatedEarnings })),
+          totals: { views: n0(r.totals.views), submitted: n0(r.totals.clipsSubmitted), approved: n0(r.totals.approvedClips), rejected: n0(r.totals.rejectedClips), pending: n0(r.totals.pendingReviewClips), hires: n0(r.totals.activeHires), estimated: n0(r.totals.estimated), claimable: n0(r.totals.claimable), claimed: n0(r.totals.claimed), confirmedViews: finite(r.totals.confirmedViews), pendingViews: finite(r.totals.pendingViews) },
+          campaigns: r.campaigns.map((c) => ({ campaignId: c.campaignId, title: c.title, mode: c.payoutMode, approvedClips: c.approvedClips, views: c.views, est: c.estimatedEarnings, ...adaptConfirmed(c) })),
         };
       },
       (): CreatorDash => ({
         verified: true,
         rank: { approved: 8, rejected: 2, pending: 1, reliability: 0.8, tier: "PRO", rank: 2 },
-        totals: { views: 69_600, submitted: 11, approved: 8, rejected: 2, pending: 1, hires: 0, estimated: 155.2, claimable: 86.8, claimed: 43.11 },
-        campaigns: mockEarnings.estimates.map((e) => ({ campaignId: e.campaignId, title: e.title, mode: e.mode, approvedClips: e.approvedClips, views: e.views, est: e.est })),
+        totals: { views: 69_600, submitted: 11, approved: 8, rejected: 2, pending: 1, hires: 0, estimated: 155.2, claimable: 86.8, claimed: 43.11, confirmedViews: demoConfirmed(61_200, "per_view").confirmedViews, pendingViews: 69_600 - (demoConfirmed(61_200, "per_view").confirmedViews ?? 0) },
+        campaigns: mockEarnings.estimates.map((e) => ({ campaignId: e.campaignId, title: e.title, mode: e.mode, approvedClips: e.approvedClips, views: e.views, est: e.est, confirmedViews: e.confirmedViews, pendingViews: e.pendingViews, proof: e.proof })),
       }),
     ),
 

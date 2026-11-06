@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
+import { clippoWallet, humanHash, KIND_CAMPAIGN } from "@/lib/chain/clippo-wallet";
 import { attestationHash } from "@/lib/chain/split";
 import { db } from "@/lib/db";
 import { getCampaign, proofSchema, type Ctx } from "@/lib/domain";
@@ -13,8 +14,8 @@ const APPROVE_ACTION = "clippo-approve-campaign";
 
 /**
  * Admin human confirmation for approving a FUNDED campaign (mandatory when `campaign.highValue`).
- * Verifies a fresh World ID proof (one use only), stores it, and returns the bytes32 `attestation` to pass on-chain as
- * `approveCampaign(onchainId, attestation)`. Denied / cancelled / expired -> 403 WORLD_ID_DENIED, repeated -> 409 PROOF_REUSED;
+ * Verifies a fresh World ID proof or a completed step-up (one use only), stores it, and returns the signed `proof` the contract checks in
+ * `approveCampaign(onchainId, proof)`. Denied / cancelled / expired -> 403 WORLD_ID_DENIED, repeated -> 409 PROOF_REUSED;
  * in all failure cases nothing is recorded.
  */
 export const POST = route(async (req: Request, { params }: Ctx) => {
@@ -29,6 +30,7 @@ export const POST = route(async (req: Request, { params }: Ctx) => {
   if (v.stepUpAttemptId) await peekStepUp(v.stepUpAttemptId, bind);
   else ({ proofHash, nullifier } = await checkFreshProof(v.worldIdProof!, APPROVE_ACTION, `approve:${c.id}`));
   let attestation = "";
+  let proof: Awaited<ReturnType<ReturnType<typeof clippoWallet>["signApproval"]>> | null = null;
   await db.$transaction(async (tx) => {
     if (v.stepUpAttemptId) {
       ({ proofHash, nullifier } = await consumeStepUp(tx, v.stepUpAttemptId, bind));
@@ -40,13 +42,18 @@ export const POST = route(async (req: Request, { params }: Ctx) => {
     await tx.humanAttestation.create({
       data: { campaignId: c.id, userId: user.id, kind: "APPROVE", attestation, proofHash },
     });
+    // The approval the escrow checks: signed by the backend wallet, bound to this campaign and this approver (local signature, no network).
+    proof = c.onchainId
+      ? await clippoWallet().signApproval({ campaignId: BigInt(c.onchainId), kind: KIND_CAMPAIGN, subject: `0x${"0".repeat(64)}`, approver: user.wallet, human: humanHash(nullifier) })
+      : null;
   });
   return ok(
     {
       attestation,
+      proof,
       highValue: c.highValue,
       gate: v.stepUpAttemptId ? "stepup" : "idkit",
-      onchain: c.onchainId ? { functionName: "approveCampaign", args: [c.onchainId, attestation] } : null,
+      onchain: c.onchainId && proof ? { functionName: "approveCampaign", args: [c.onchainId, proof] } : null,
     },
     201,
   );
