@@ -7,6 +7,8 @@ Owner dir: `cre/` (plus `web/scripts/freeze-snapshot.mjs` and `web/src/app/api/s
 > Goal: build, simulate, or deploy a CRE workflow used as an orchestration layer in your project. Simulation alone is acceptable.
 > Requirements: the workflow must connect at least one blockchain to an external API, system, data source, LLM, or AI agent. Show a successful simulation via the CRE CLI or a live deployment, and the workflow must be meaningfully used in the project.
 
+VERIFIED 2026-11-06 against the live page: "Best workflow with CRE" $1,500: "Build, simulate, or deploy a CRE Workflow that's used as an orchestration layer within your project. ... simulation is enough!" Must: integrate at least one blockchain with an external API/system/data source/LLM/AI agent; demonstrate a successful simulation (via the CRE CLI) or live deployment; be meaningfully used. A separate "Best use of Chainlink CCIP 2.0" ($3,500) prize exists and is not targeted.
+
 The page lists no separate judging criteria. So the proof judges need is `cre workflow simulate` output (or a live deployment). Our emulation output (below) is supporting evidence only, NOT the CLI simulation.
 
 ## Current CRE facts (docs.chain.link/cre, fetched 2026-10-28)
@@ -18,9 +20,9 @@ The page lists no separate judging criteria. So the proof judges need is `cre wo
 | Runtime deps | Bun >= 1.2.21 (SDK compiles with bun + Javy to WASM). bun 1.4.4 installed via npm in a scratch dir. |
 | TS SDK | `@chainlink/cre-sdk` 1.23.0 (latest on npm; already in `cre/package.json`). |
 | Account | Free account at https://app.chain.link/cre. **`cre init` and `cre workflow simulate` both refuse to run unless logged in (`cre login`, browser + 2FA) or `CRE_API_KEY` is set.** Verified: both abort with "Authentication required". |
-| Deploy | `cre workflow deploy` needs Early Access deploy approval (`cre account access` or https://cre.chain.link/request-access). Simulation does not. |
+| Deploy | `cre workflow deploy` needs approval via `cre account access` (not required for the prize). Simulation does not. |
 | Arc support | **Arc Testnet is supported** (chain name `arc-testnet`, in SDK 1.23 selectors). Forwarders (https://docs.chain.link/cre/guides/workflow/using-evm-client/supported-networks-ts): simulation MockKeystoneForwarder `0x6E9EE680ef59ef64Aa8C7371279c27E496b5eDc1`, production KeystoneForwarder `0x76c9cf548b4179F8901cda1f8623568b58215E62`. Docs: confirm tenant availability with `cre workflow supported-chains` after login. |
-| Sim flags | `cre workflow simulate <dir> --target <t> [--non-interactive --trigger-index N] [--http-payload JSON or @file] [--broadcast]`; `CRE_ETH_PRIVATE_KEY` in `.env` for writes; without `--broadcast` writes are a dry run. |
+| Sim flags | `cre workflow simulate <workflow-name-or-path> --target <target> [--broadcast] [--non-interactive --trigger-index N] [--http-payload '<json>|<file>']`; `cre login` is required even for simulate (browser; `CRE_API_KEY` only for approved deploy access); `CRE_ETH_PRIVATE_KEY` in `.env` for writes; without `--broadcast` it is a dry run (empty tx hash `0x`). Bun >= 1.2.21 for TS workflows. |
 | Config shape | `project.yaml`: `<target>: { rpcs: [{chain-name, url}] }` (`account.workflow-owner-address` is multisig-only/optional). `workflow.yaml`: `<target>: { user-workflow.workflow-name, workflow-artifacts.{workflow-path,config-path,secrets-path} }`. |
 | Consensus | `consensusMedianAggregation`, `consensusIdenticalAggregation`, `consensusCommonPrefixAggregation`, `ConsensusAggregationByFields({field: median/identical/commonPrefix/ignore})`. |
 | Write path | `runtime.report({encodedPayload, encoderName:"evm", signingAlgo:"ecdsa", hashingAlgo:"keccak256"})` then `EVMClient.writeReport(runtime,{receiver, report, gasConfig})`; the forwarder calls `IReceiver.onReport(metadata, report)`. Check both `txStatus` and `receiverContractExecutionStatus`. |
@@ -32,8 +34,8 @@ Doc caveat: the simulate docs say the simulator's mock forwarder "doesn't call y
 
 | # | Requirement | Source | Status |
 | --- | --- | --- | --- |
-| 1 | Workflow connects a blockchain to an external data source | Prize page | DONE in code: HTTP read of `/api/snapshots/daily`, EVM `writeReport` to Arc |
-| 2 | Successful simulation via CRE CLI OR live deployment | Prize page | **BLOCKED on user: needs `cre login`.** Single command ready: `bash scripts/simulate-local.sh` |
+| 1 | Workflow connects a blockchain to an external data source | Prize page (verified 2026-11-06) | DONE in code: HTTP read of `/api/snapshots/daily`, EVM `writeReport` to Arc |
+| 2 | Successful simulation via CRE CLI OR live deployment | Prize page (verified 2026-11-06) | **BLOCKED on user: needs `cre login`.** Single command ready: `bash scripts/simulate-local.sh` |
 | 3 | Meaningfully used in the project | Prize page, PRD 6.1 | DONE by design: replaces the admin wallet writing view counts; receiver is the escrow's only reportAdapter |
 | 4 | Workflow compiles with the CLI toolchain | CRE SDK | VERIFIED: `cre-compile` (typecheck, runtime-compat check, Javy WASM, 2.5 MB) passes with bun 1.4.4 |
 | 5 | project.yaml / workflow.yaml match canonical format | CRE docs | DONE from docs; `cre init` could not be run (login), so not diffed against init output |
@@ -69,7 +71,7 @@ bash scripts/capture-evidence.sh | tee ../docs/tracks/cre-simulation-output.txt
 # REAL simulation (needs cre + bun on PATH, and `cre login` done)
 bash scripts/simulate-local.sh
 # manual equivalent:
-#   anvil --fork-url https://rpc.testnet.arc.network --port 8545 --chain-id 5042002
+#   anvil --fork-url https://rpc.testnet.arc.io --port 8545 --chain-id 5042002
 #   bash scripts/local-chain.sh; set -a; source scripts/.local-chain.env; set +a
 #   node scripts/mock-backend.mjs &
 #   cre workflow simulate ./workflows/clippo-settlement --target staging-settings --non-interactive --trigger-index 0 --broadcast
