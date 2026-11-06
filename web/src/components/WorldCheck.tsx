@@ -4,10 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { Eye } from "./Icons";
 import { ApiError, DEMO, type WorldProof } from "./api";
 
-export type WorldResult = "verified" | "cancelled" | "expired" | "repeated" | "failed";
+export type WorldResult = "verified" | "cancelled" | "expired" | "repeated" | "failed" | "unavailable";
 
 const ACTION = process.env.NEXT_PUBLIC_WORLD_ACTION ?? "clippo-creator-signup";
-const LEVEL = process.env.NEXT_PUBLIC_WORLD_LEVEL === "device" ? "device" : "orb";
 
 const IDKitSheet = dynamic(() => import("./IDKitSheet"), { ssr: false });
 
@@ -25,7 +24,6 @@ export function WorldCheck({ purpose, kind, action = ACTION, signal, onResult }:
   return (
     <IDKitSheet
       action={action}
-      level={LEVEL}
       signal={signal}
       onProof={(p) => onResult("verified", p)}
       onFail={(f) => (f.kind === "unconfigured" ? setUnconf(f.message) : onResult(f.kind, undefined, f.message))}
@@ -68,13 +66,14 @@ function Simulator({ purpose, kind, onResult }: { purpose: string; kind: "proof-
   return (
     <div className="sheet-back" role="presentation">
       <div className="sheet" role="dialog" aria-modal="true" aria-labelledby="wc-t">
-        <span className="micro">{kind === "agent-pass" ? "World ID · Agent Pass" : "World ID · Proof of Human"} · demo</span>
+        <span className="micro">{kind === "agent-pass" ? "World ID · Agent Pass" : "World ID · Proof of Human"} · simulator</span>
         <h2 id="wc-t" className="display" style={{ fontSize: "2rem" }}><Eye size={26} /> {purpose}</h2>
         <p className="muted">Demo build: no World ID app is wired. Pick an outcome.</p>
         <div className="stack" style={{ gap: 10 }}>
-          <button ref={first} className="btn" onClick={() => onResult("verified", proof("demo-proof"))}>Verify as a unique human</button>
+          <button ref={first} className="btn" onClick={() => onResult("verified", proof("demo-proof"))}>Verify with Proof of Human (demo)</button>
           <div className="row">
             <button className="btn ghost sm" onClick={() => onResult("cancelled")}>Cancel</button>
+            <button className="btn ghost sm" onClick={() => onResult("unavailable", undefined, "Your World ID has no Proof of Human credential. You can browse as a viewer but cannot join campaigns as a creator.")}>No Proof of Human credential</button>
             <button className="btn ghost sm" onClick={() => onResult("verified", proof("expired"))}>Let it expire</button>
             <button className="btn ghost sm" onClick={() => onResult("verified", proof("repeated"))}>Reuse an old proof</button>
           </div>
@@ -88,6 +87,7 @@ export const WORLD_FAIL: Record<Exclude<WorldResult, "verified">, string> = {
   cancelled: "You cancelled the check. Nothing was changed.",
   expired: "The check expired before it finished. Nothing was changed. Start again.",
   repeated: "That proof was already used. Each check works once. Nothing was changed.",
+  unavailable: "Your World ID has no Proof of Human credential. You can browse as a viewer but cannot join campaigns as a creator.",
   failed: "World ID could not complete the check. Nothing was changed.",
 };
 
