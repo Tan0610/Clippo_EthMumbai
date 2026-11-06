@@ -333,6 +333,19 @@ async function reportTx(txHash: string) {
   await api(`/chain/report`, { json: { txHash } }).catch((e) => console.warn("chain report failed; the next sync will catch up", e));
 }
 
+export interface ChainDispute {
+  payoutId: string;
+  campaignId: string;
+  title: string;
+  onchainId: string;
+  creatorWallet: `0x${string}`;
+  amount: number;
+  releaseAt: string | null;
+  open: boolean;
+  resolveBy: string | null;
+}
+export const listChainDisputes = () => api<{ disputes: ChainDispute[] }>(`/chain/disputes`);
+
 /** Campaigner: dispute a creator's PER_VIEW credits that are still inside the retention window. */
 export async function disputeCredits(onchainId: string, creator: `0x${string}`) {
   const { chain: cfg } = await getChainConfig();
