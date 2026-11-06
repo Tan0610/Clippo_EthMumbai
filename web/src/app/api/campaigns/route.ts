@@ -22,7 +22,7 @@ const createSchema = z
   })
   .superRefine((v, ctx) => {
     if (v.payoutMode === "PER_VIEW" && !v.ratePer1k) ctx.addIssue({ code: "custom", path: ["ratePer1k"], message: "required for PER_VIEW" });
-    if (v.payoutMode === "POOL_SHARE" && !v.poolShareBasis) ctx.addIssue({ code: "custom", path: ["poolShareBasis"], message: "required for POOL_SHARE" });
+    if (v.payoutMode === "POOL_SHARE" && v.poolShareBasis === "APPROVED_CLIPS") ctx.addIssue({ code: "custom", path: ["poolShareBasis"], message: "Pool share is by verified views" });
     if (v.payoutMode === "HUMAN_SPLIT" && !v.approver) ctx.addIssue({ code: "custom", path: ["approver"], message: "required for HUMAN_SPLIT" });
   });
 
@@ -39,7 +39,7 @@ export const POST = route(async (req: Request) => {
       contentUrl: v.contentUrl,
       platforms: v.platforms,
       payoutMode: v.payoutMode,
-      poolShareBasis: v.payoutMode === "POOL_SHARE" ? v.poolShareBasis : null,
+      poolShareBasis: v.payoutMode === "POOL_SHARE" ? "VIEWS" : null, // the escrow shares the pool by CRE-reported views
       approver: v.payoutMode === "HUMAN_SPLIT" ? v.approver : null,
       poolSize: v.poolSize,
       ratePer1k: v.payoutMode === "PER_VIEW" ? v.ratePer1k : null,

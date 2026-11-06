@@ -51,7 +51,7 @@ export function BenchView() {
     setBusy(i.id);
     try {
       const a = await actions.attest(i.id, proof);
-      await escrow.approve({ id: i.id, onchainId: i.onchainId }, a.attestation);
+      await escrow.approve({ id: i.id, onchainId: i.onchainId }, a.proof ?? undefined);
       setDone((x) => ({ ...x, [i.id]: "Approved and live" }));
     } catch (e) {
       setErr(worldFailText(e));
