@@ -2,7 +2,7 @@
 # Deploys MockUSDC + ClippoEscrow + ClippoReportReceiver on a LOCAL anvil fork of Arc testnet and seeds campaigns 1..12
 # (7 and 12 Approved PerView campaigns, matching the shared fixture's campaign ids), then links the fixture's creators to
 # World ID humans (registerHuman, signed by a local attestor) because reportViews reverts NotHuman for unlinked wallets.
-# Prereq:  anvil --fork-url https://rpc.testnet.arc.network --port 8545 --chain-id 5042002   (fork keeps the real MockKeystoneForwarder)
+# Prereq:  anvil --fork-url https://rpc.testnet.arc.io --port 8545 --chain-id 5042002   (fork keeps the real MockKeystoneForwarder)
 # Usage:   bash scripts/local-chain.sh        -> writes scripts/.local-chain.env (addresses) and prints them
 #          REGISTER_LARGE_ROWS=60 also links the creators served by `mock-backend.mjs --mode large --large-rows 60`
 set -euo pipefail

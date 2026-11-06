@@ -259,7 +259,7 @@ export interface HumanProof {
   expiresAt: string;
   signature: `0x${string}`;
 }
-const chainProof = (p: HumanProof) => ({ human: p.human, expiresAt: BigInt(p.expiresAt), signature: p.signature });
+export const chainProof = (p: HumanProof) => ({ human: p.human, expiresAt: BigInt(p.expiresAt), signature: p.signature });
 
 /** Admin: on-chain approve (pass the proof from POST /campaigns/:id/attest for high-value campaigns), then verify via the API. */
 export async function approveCampaignOnchain(campaignId: string, onchainId: string, proof?: HumanProof) {

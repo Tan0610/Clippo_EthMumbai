@@ -82,12 +82,16 @@ model User {
   /// LEGACY, unused. Added by migration 20261106000000_world_idp_identity (already applied on the clippo-cre database). Kept so the schema matches the database; the step-up now uses worldAuthIss / worldAuthSub.
   worldIdpIdentity String?      @unique
   verified         Boolean      @default(false)
+  worldAuthIss     String? // auth.world.org issuer + pairwise sub bound at first successful step-up (identity pin)
+  worldAuthSub     String?
   createdAt        DateTime     @default(now())
   channels         Channel[]
   campaigns        Campaign[]
   submissions      Submission[]
   payouts          Payout[]
   viewsReports     ViewsReport[]
+
+  @@unique([worldAuthIss, worldAuthSub])
 }
 
 model Channel {
@@ -347,6 +351,7 @@ model AgentAudit {
   actorId     String?
   actorRole   String? // AGENT | CAMPAIGNER | ADMIN
   event       String // DELEGATED | PROPOSED | APPROVED | REFUSED
+  // Step-up outcomes (auth.world.org) also used here: STEPUP_REQUIRED | STEPUP_STARTED | STEPUP_DENIED | STEPUP_EXPIRED | STEPUP_TOKEN_INVALID | STEPUP_NONCE_MISMATCH | STEPUP_ASSURANCE | STEPUP_STALE_AUTH | STEPUP_IDENTITY_MISMATCH | STEPUP_SAME_HUMAN | STEPUP_BINDING_MISMATCH | STEPUP_CONSUMED | STEPUP_DEPENDENCY
   outcome     String // OK | CANCELLED | EXPIRED_PROOF | PROPOSAL_EXPIRED | REPLAYED | WRONG_APPROVER | SPLIT_CHANGED | ALREADY_RELEASED | ALREADY_APPROVED | PROOF_INVALID | AGENT_UNVERIFIED | REFUSED
   code        String?
   detail      String
@@ -645,4 +650,42 @@ model RateLimitBucket {
 
   @@id([key, windowStart])
   @@index([windowStart])
+}
+
+// auth.world.org OIDC step-up (World ID Agent Pass human gate): one row per authorization attempt, single use.
+model StepUpAttempt {
+  id             String    @id @default(cuid())
+  state          String    @unique
+  nonce          String
+  codeVerifier   String // PKCE verifier: server only, never returned to clients or logged
+  userId         String
+  campaignId     String
+  operation      String // SPLIT_RELEASE | CAMPAIGN_APPROVE
+  actorRole      String // CAMPAIGNER | ADMIN
+  splitHash      String?
+  splits         Json?
+  agentProposalId String?
+  boundIss       String?
+  boundSub       String?
+  allowEnroll    Boolean   @default(false)
+  requiredAcr    Json
+  maxAge         Int       @default(0)
+  returnPath     String
+  status         String    @default("PENDING") // PENDING | PROCESSING | AUTHORIZED | CONSUMED | DENIED | EXPIRED | FAILED
+  failureCode    String?
+  failureDetail  String?
+  iss            String?
+  sub            String?
+  acr            String?
+  amr            Json?
+  authTime       DateTime?
+  tokenJti       String?
+  codeRedeemedAt DateTime?
+  authorizedAt   DateTime?
+  consumedAt     DateTime?
+  expiresAt      DateTime
+  authorizedUntil DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([userId, campaignId, status])
 }

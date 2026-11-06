@@ -18,7 +18,7 @@ export const env = (name: string) => process.env[name]?.trim() || undefined;
  * Explicit dependency-injection seam for TESTS ONLY (the doubles live in src/test/doubles.ts).
  * Production code never registers overrides; setting one when NODE_ENV=production is refused.
  */
-export type OverrideKey = "youtube" | "x" | "instagram" | "llm" | "videoGenerator" | "worldId" | "escrowReader" | "chainSigner" | "clippoWallet" | "transak" | "agentBook";
+export type OverrideKey = "youtube" | "x" | "instagram" | "llm" | "videoGenerator" | "worldId" | "escrowReader" | "chainSigner" | "clippoWallet" | "transak" | "agentBook" | "worldAuth";
 const g = globalThis as unknown as { __clippoOverrides?: Map<OverrideKey, unknown> };
 
 export function setOverride<T>(key: OverrideKey, impl: T | null): void {

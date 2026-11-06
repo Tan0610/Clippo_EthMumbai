@@ -1,4 +1,4 @@
-# World ID setup check (2026-10-28)
+# World ID setup check (2026-10-28; update 2026-11-06 near the end)
 
 No secret values appear here; only names, lengths and pass/fail.
 
@@ -46,3 +46,15 @@ All five steps are still open; none has been done.
 3. Scan the QR code shown with the simulator and approve.
 4. Repeat for an approval flow (split and campaign) to confirm `clippo-approve-split` and `clippo-approve-campaign` exist; "action not found" or similar from the portal means a name or environment mismatch. Since commit `19205ba`, an agent's split is approved through the `auth.world.org` OIDC step-up instead; `clippo-approve-split` is only used for a person's own split.
 5. Check the creator-signup limit of 1: a second verification with the same simulator identity should be refused as already used.
+
+## Update 2026-11-06: live Developer Portal setup
+
+DONE 2026-11-06 (live, at developer.world.org): app 'Clippo' created; relying party registered via the app's 'World ID Configuration' tab ('Register relying party' -> 'Generate new key' dialog -> RP ID and signer address shown after about 8 seconds); actions `clippo-creator-signup`, `clippo-approve-split`, `clippo-approve-campaign` created from the Dashboard tab. The app id, RP id and signing key were written to `web/.env.local` (values not shown here). The 2026-10-28 results above refer to an earlier app (portal name "Clipoo"); re-running `npm run doctor` and the checks against the new app is TODO.
+
+The real UI differs from the docs: no 'Enable World ID 4.0' banner, no app-type choice, and the action dialog has only 'Identifier' and 'Short description' (no max-verifications / uniqueness setting; portal defaults apply). TODO (unresolved): whether defaults allow repeat verifications for the approve actions (test with a second approval; if refused, note it). The "creator-signup limit of 1" check in step 5 below is also unconfirmed.
+
+Blocker: auth.world.org access. The auth.world.org portals accept only an enterprise Google account; a personal Gmail got 403 `account_not_eligible` from the sandbox portal. `WORLD_AUTH_*` is NOT configured; the step-up gate is off and, with the default `agent-required` policy, agent-proposal releases return 428 `STEPUP_REQUIRED`. See `docs/WORLD_USER_TODO.md` ("Blocker: auth.world.org access") for the options (World mentor, OAuth Playground, and the `WORLD_AUTH_POLICY=either` demo fallback, which is NOT the official Agent Pass integration).
+
+## auth.world.org step-up (not checked)
+
+This document covers only the Developer Portal / IDKit setup. Not checked and not run live: auth.world.org step-up (`WORLD_AUTH_CLIENT_ID`, `WORLD_AUTH_CLIENT_SECRET`, `WORLD_AUTH_ISSUER`, `WORLD_AUTH_REDIRECT_URI`, `WORLD_AUTH_TOKEN_AUTH`, `WORLD_AUTH_ACR`, `WORLD_AUTH_POLICY`; see `DEPLOY_ENV.md`) is a SEPARATE registration from the Developer Portal app used for IDKit (`WORLD_ID_*`). The redirect URI must be registered exactly as `https://<host>/api/auth/world/callback` (localhost over http is likely unsupported: use an HTTPS tunnel or the deployed URL). Sandbox client IDs have a lead time of about 1 hour via a World contact. Nothing here has been run live. Full list of manual steps: `docs/WORLD_USER_TODO.md`. `npm run doctor` fetches the issuer discovery document once `WORLD_AUTH_*` is set.

@@ -19,11 +19,21 @@ const RPC = process.env.ARC_RPC_URL || "https://rpc.testnet.arc.io";
 const EXPLORER = "https://explorer.testnet.arc.io";
 
 if (process.argv.includes("--deploy")) {
-  const key = process.env.DEPLOYER_PRIVATE_KEY;
-  if (!key) { console.error("Set DEPLOYER_PRIVATE_KEY (testnet key only) plus ADMIN_ADDRESS, FORWARDER_ADDRESS, UPDATER_ADDRESS."); process.exit(1); }
+  // Names below are exactly what contracts/script/Deploy.s.sol reads via vm.env*: ADMIN_ADDRESS, FORWARDER_ADDRESS,
+  // UPDATER_ADDRESS (required), EXPECTED_WORKFLOW_OWNER (required unless INSECURE_SKIP_WORKFLOW_CHECK=true), optional
+  // TREASURY_ADDRESS, RECORDER_ADDRESS, GUARDIAN_ADDRESS, USDC_ADDRESS, CAMPAIGNER_FEE_BPS, CREATOR_FEE_BPS, ... The deployer key
+  // is not read by the Solidity script; it is passed to forge as --private-key (PRIVATE_KEY, or the older DEPLOYER_PRIVATE_KEY).
+  // Older script-only aliases are still accepted: ADMIN -> ADMIN_ADDRESS, TREASURY -> TREASURY_ADDRESS.
+  const alias = (name, old) => { if (!process.env[name] && process.env[old]) process.env[name] = process.env[old]; };
+  alias("ADMIN_ADDRESS", "ADMIN"); alias("TREASURY_ADDRESS", "TREASURY");
+  const key = process.env.PRIVATE_KEY || process.env.DEPLOYER_PRIVATE_KEY;
   const skip = process.env.INSECURE_SKIP_WORKFLOW_CHECK === "true";
-  const wo = process.env.EXPECTED_WORKFLOW_OWNER;
-  if (!skip && !/^0x[0-9a-fA-F]{40}$/.test(wo || "")) { console.error("Set EXPECTED_WORKFLOW_OWNER=0x<CRE workflow owner> (fail-closed receiver), or INSECURE_SKIP_WORKFLOW_CHECK=true for simulation only."); process.exit(1); }
+  const addrRe = /^0x[0-9a-fA-F]{40}$/;
+  const missing = [];
+  if (!key) missing.push("PRIVATE_KEY (testnet key only; DEPLOYER_PRIVATE_KEY also accepted)");
+  for (const n of ["ADMIN_ADDRESS", "FORWARDER_ADDRESS", "UPDATER_ADDRESS"]) if (!addrRe.test(process.env[n] || "")) missing.push(`${n} (0x address)`);
+  if (!skip && !addrRe.test(process.env.EXPECTED_WORKFLOW_OWNER || "")) missing.push("EXPECTED_WORKFLOW_OWNER (0x CRE workflow owner; or INSECURE_SKIP_WORKFLOW_CHECK=true for simulation only)");
+  if (missing.length) { console.error("Missing or invalid env for --deploy:\n  - " + missing.join("\n  - ")); process.exit(1); }
   if (skip) console.warn("WARNING: INSECURE_SKIP_WORKFLOW_CHECK=true -> receiver accepts any workflow behind the forwarder. Simulation only; never production.");
   const args = ["script", "script/Deploy.s.sol:Deploy", "--rpc-url", RPC, "--private-key", key, "--broadcast"];
   if (!process.argv.includes("--no-verify")) args.push("--verify", "--verifier", "blockscout", "--verifier-url", `${EXPLORER}/api/`);
