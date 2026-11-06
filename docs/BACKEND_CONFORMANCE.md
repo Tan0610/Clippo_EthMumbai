@@ -58,10 +58,10 @@ Test keys: `PC` src/lib/prd-conformance.test.ts (new), `BI` src/lib/backend.inte
 | 43 | 4.2.2 Read transcript and metadata | `lib/platforms/*`, `lib/youtube`; stored on `Submission` | PL, PA | DONE | DONE |
 | 44 | 4.2.3 Compare with story: topic, required points | LLM verifier prompt (story outside delimiters) | VT | DONE | DONE |
 | 45 | 4.2.3 Prohibited claims and required disclosure label checked | **new** `checkStoryRules` in `lib/ai/verifier.ts`: deterministic backstop; an LLM APPROVE with a missing label or a prohibited claim becomes NEEDS_HUMAN (flags `disclosure_missing`, `prohibited_claim_suspected`); never approves | PC (6 rule cases, 4 verdict cases), VT | PARTIAL (LLM-only) | DONE |
-| 46 | 4.2.3 Attribution to the source | LLM prompt only (free-text rule cannot be matched deterministically) | VT (prompt) | PARTIAL | PARTIAL (by design, see decisions) |
+| 46 | 4.2.3 Attribution to the source | LLM prompt + **new** attribution backstop in `checkStoryRules` (`lib/ai/verifier.ts`): when the story requires attribution, an LLM APPROVE carrying no crediting signal (credit / courtesy / via / source / @mention / ...) becomes NEEDS_HUMAN (flag `attribution_missing`); never approves | PC (rule cases + verdict downgrade/credited), VT | PARTIAL | DONE |
 | 47 | 4.2.4 Duplicate and near-duplicate | `lib/ai/duplicates.ts` (hash + 3-shingle Jaccard >= 0.8); same video link refused | VT, PA | DONE | DONE |
 | 48 | 4.2.5 Verdict with confidence and written reason | `Verdict` model; threshold `VERIFIER_CONFIDENCE_THRESHOLD` (0.75) | VT | DONE | DONE |
-| 49 | 4.2 Borderline/low confidence -> campaigner (and admin if chosen) | NEEDS_HUMAN visible to campaigner via `campaigns/[id]/submissions`, resolved by `submissions/[id]/verdict`; all NEEDS_HUMAN also in `admin/queue` (with `campaign.approver`) | PA, PC (queue) | PARTIAL | PARTIAL (see decisions: admin sees all, not only when chosen) |
+| 49 | 4.2 Borderline/low confidence -> campaigner (and admin if chosen) | NEEDS_HUMAN visible to campaigner via `campaigns/[id]/submissions`, resolved by `submissions/[id]/verdict`; **`admin/queue` now scopes** `flaggedSubmissions` to clips the admin owns: `approver = CAMPAIGNER_AND_ADMIN`, an `unreadable` clip (4.7), or a clip with an open fraud flag (4.6/8) | PA, PC (queue: chosen/unreadable/fraud included, campaigner-only excluded) | PARTIAL | DONE |
 | 50 | 4.2 Every verdict + reason stored, visible to the creator, who can appeal | `submissions` GET, `submissions/[id]/appeal`, `appeals*` (campaigner first, SLA, admin escalation) | `appeals.test.ts`, PA | DONE | DONE |
 | 51 | 4.2 Clip text is data only (prompt injection) | delimiters + nonce, sanitising, `detectInjection` downgrade | VT (injection suite) | DONE | DONE |
 | 52 | 4.2 Only approved clips earn | snapshots / earnings / pool-share filter `verdict = APPROVE`, `clipStatus = LIVE` | BI, PC | DONE | DONE |
@@ -91,9 +91,11 @@ Test keys: `PC` src/lib/prd-conformance.test.ts (new), `BI` src/lib/backend.inte
 | | DONE | PARTIAL | MISSING | Total |
 |---|---|---|---|---|
 | Before | 66 | 5 | 1 | 72 |
-| After | 70 | 2 | 0 | 72 |
+| After (2026-10-28) | 70 | 2 | 0 | 72 |
+| Now (2026-11-04) | 72 | 0 | 0 | 72 |
 
-Rows whose Before differs: #21 MISSING -> DONE, #23 PARTIAL -> DONE, #45 PARTIAL -> DONE, #68 PARTIAL -> DONE.
+Rows changed 2026-10-28: #21 MISSING -> DONE, #23 PARTIAL -> DONE, #45 PARTIAL -> DONE, #68 PARTIAL -> DONE.
+Rows changed 2026-11-04: #46 PARTIAL -> DONE, #49 PARTIAL -> DONE.
 Untested-before rows now covered by PC: #4, #5, #12-#18, #25, #40, #41, #60, #66.
 
 ## Fixes made in this pass
@@ -110,13 +112,18 @@ Untested-before rows now covered by PC: #4, #5, #12-#18, #25, #40, #41, #60, #66
 Run against `next dev` on :3231 (own `NEXT_DIST_DIR`) with an isolated PGlite DB on :5461, because the shared 3217 server / :5433 DB was answering `DATABASE_UNAVAILABLE` / 500 (its single connection was wedged by another process; I did not touch it). Steps: SIWE sign-in x2 with random keys (replay and forged signature refused) · role gates · admin via dev bypass · wizard suggest · create per payout mode + 400s · draft privacy · fund preview (fees in range) · fund POST = 503 NOT_CONFIGURED · admin approve = 503 NOT_CONFIGURED · admin reject of a draft · admin queue · pool-share gating · World ID verify / rp-signature = 503 NOT_CONFIGURED · channel proof = 403 NOT_VERIFIED · submission gate · appeal/verdict gates · claim 404 · upload + Range 206 + download + spoof 415 · source link validation · AI video 400 / 503 NOT_CONFIGURED · creator profile (unverified hidden from directory) · shortlist/brief/hire · dashboards, leaderboard, trending · snapshots latest (numeric ids) and daily (frozen) · chain config / sync = 503 · on-ramp 503 · optional modules 404 FEATURE_DISABLED (6 routes) · out-of-scope 404s · assistant gating.
 Not reachable over HTTP without credentials (covered by vitest with doubles instead): verified-creator channel code flow, submission -> verdict, appeal, claim, split approval, fund/approve/reject happy paths.
 
+## Update 2026-11-04: closed the two PARTIAL rows (#46, #49)
+
+1. **Attribution backstop (#46).** `checkStoryRules` (`lib/ai/verifier.ts`) now also returns `attributionMissing`. When `story.attribution` is non-empty and the clip text carries no crediting signal (`credit`, `courtesy`, `via`, `source`, `original`, `attribution`, `h/t`, `thanks to`, `footage by`, ..., or any `@mention`), an LLM APPROVE is downgraded to NEEDS_HUMAN with flag `attribution_missing`. Like the disclosure/prohibited backstops it only ever downgrades; it never approves or rejects. Inactive when the campaign requires no attribution.
+2. **Admin-queue scoping (#49).** `GET /api/admin/queue` no longer lists every NEEDS_HUMAN clip. `flaggedSubmissions` now holds only clips the admin owns: campaigns whose `approver = CAMPAIGNER_AND_ADMIN` (admin chosen), clips flagged `unreadable` (4.7), or clips with an open fraud flag (4.6/8). Campaigner-owned borderline clips remain visible to the campaigner via `GET /api/campaigns/[id]/submissions`.
+
+Tests: `prd-conformance.test.ts` extended (attribution rule/verdict cases; admin queue chosen/unreadable/fraud included, campaigner-only excluded).
+
 ## Remaining gaps and reasons
 
 | Gap | Reason |
 |---|---|
 | Real World ID (IDKit / Agent Pass), YouTube/X/Instagram data, escrow + RPC, Transak, LLM and video providers | No credentials exist yet; every real adapter answers 503 NOT_CONFIGURED, by design. Only the test doubles run the happy paths. |
-| Attribution check is LLM-only (#46) | The rule is free text; a string match would be wrong more often than right. |
-| Borderline clips: admin sees every NEEDS_HUMAN, not only when the campaigner chose "me and an admin" (#49) | Admin also owns disputes and unreadable clips (4.6/4.7), so filtering would hide work; `campaign.approver` is returned so a UI can filter. |
 | Pool share weights are sent by a human wallet (`setWeights`); no server wallet does it | Deliberate: agents/server never release money. |
 | Shared 3217 dev server / :5433 DB | Wedged (DB connection) at audit time; not mine to restart. |
 
@@ -126,4 +133,6 @@ Not reachable over HTTP without credentials (covered by vitest with doubles inst
 - **Creator "join"**: there is no separate join action; submitting a link to an APPROVED campaign (with eligibility met) is joining. `campaigns/[id]/eligibility` tells the creator why they cannot.
 - **Creator socials page**: backed by `GET /api/channels` (all linked channels with verification state), not a separate model.
 - **Disclosure matching**: a generic label (`#ad`, `sponsored`, `advertisement`, `paid partnership`) is satisfied by any of those words as whole words in transcript/title/description; a custom label must appear as a phrase. On-screen-only labels cannot be seen, so a missing text label goes to human review rather than REJECT.
+- **Attribution matching (#46)**: the attribution rule is free text, so instead of matching it literally the backstop looks for *any* crediting signal (credit / courtesy / via / source / original / attribution / h-t / thanks to / footage-clip-video by / repost, or an `@mention`). A clip that requires attribution but shows none goes to human review rather than REJECT — mirroring the disclosure decision. A false positive only sends a clip to a human; it can never auto-approve.
+- **Admin queue scoping (#49)**: "and admin if chosen" is read as `approver = CAMPAIGNER_AND_ADMIN`. The admin still owns unreadable clips (4.7) and fraud-flagged clips (4.6/8) regardless of approver, so those stay in the queue; plain campaigner-only borderline clips are the campaigner's to resolve and are excluded from the admin queue (still visible to the campaigner on their own campaign).
 - **Admin reject after funding (9.4)**: allowed, full refund including the campaigner fee, as the escrow's `rejectCampaign` does.
