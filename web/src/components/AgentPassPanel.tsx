@@ -21,7 +21,20 @@ const OUTCOME: Record<string, string> = {
   AGENT_UNVERIFIED: "Agent not verified",
   AI_REJECTED: "AI proposal rejected, non-AI split used",
   REFUSED: "Refused",
+  STEPUP_REQUESTED: "Step-up requested",
+  STEPUP_DENIED: "Step-up denied",
+  STEPUP_EXPIRED: "Step-up expired",
+  STEPUP_INVALID: "Step-up invalid",
+  STEPUP_ASSURANCE: "Step-up below Orb-class",
+  STEPUP_STALE: "Step-up too old",
+  STEPUP_IDENTITY: "Step-up identity mismatch",
+  STEPUP_BINDING: "Step-up not bound to this split",
+  STEPUP_REPLAYED: "Step-up reused",
+  STEPUP_DEPENDENCY: "World ID unreachable",
 };
+/** Step-up outcomes carry their own label and color regardless of the event type: requested is neutral, every other one is a denial (nothing was approved). */
+const isStepUp = (o: string) => o.startsWith("STEPUP_");
+const stepUpColor = (o: string): React.CSSProperties | undefined => (o === "STEPUP_REQUESTED" ? undefined : { color: o === "STEPUP_DEPENDENCY" ? "var(--hold)" : "var(--no)", borderColor: o === "STEPUP_DEPENDENCY" ? "var(--hold)" : "var(--no)" });
 const PROOF: Record<string, string> = { VALID: "valid", NONE: "none", CANCELLED: "cancelled", EXPIRED: "expired", REPLAYED: "replayed", INVALID: "invalid" };
 const EVENT: Record<AuditEntry["event"], string> = { DELEGATED: "Agent delegated", PROPOSED: "Agent proposed", APPROVED: "Human approved", REFUSED: "Refused, nothing changed" };
 
@@ -100,7 +113,7 @@ export function AgentPassPanel({ campaignId, title, refreshKey = 0 }: { campaign
               {q.data.audit.map((a) => (
                 <li key={a.id} className="stack" style={{ gap: 2, padding: "8px 0", borderBottom: "1px solid var(--rule-soft)" }}>
                   <div className="row" style={{ gap: 10 }}>
-                    <span className={`tag${a.event === "REFUSED" ? "" : " solid"}`}>{a.event === "REFUSED" ? OUTCOME[a.outcome] ?? a.outcome : EVENT[a.event]}</span>
+                    <span className={`tag${a.event === "REFUSED" || isStepUp(a.outcome) ? "" : " solid"}`} style={isStepUp(a.outcome) ? stepUpColor(a.outcome) : undefined}>{isStepUp(a.outcome) || a.event === "REFUSED" ? OUTCOME[a.outcome] ?? a.outcome : EVENT[a.event]}</span>
                     <span className="micro">{a.actorRole ? a.actorRole.toLowerCase() : "system"} · proof {a.proofStatus ? PROOF[a.proofStatus] ?? a.proofStatus.toLowerCase() : "none"}{a.source === "client" ? " · reported by the page" : ""}</span>
                     <span className="micro">{new Date(a.createdAt).toLocaleString()}</span>
                   </div>

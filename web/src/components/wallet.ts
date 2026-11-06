@@ -12,7 +12,7 @@ let cached: Promise<ChainInfo> | null = null;
 const envChain = (): PublicChainConfig => ({
   enabled: false,
   chainId: Number(process.env.NEXT_PUBLIC_ARC_CHAIN_ID ?? 5042002),
-  rpcUrl: process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network",
+  rpcUrl: process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.io",
   usdc: (process.env.NEXT_PUBLIC_USDC_ADDRESS ?? "0x3600000000000000000000000000000000000000") as `0x${string}`,
   escrow: null,
   usdcDecimals: 6,

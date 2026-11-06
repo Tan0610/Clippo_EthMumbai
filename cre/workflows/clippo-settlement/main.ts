@@ -16,33 +16,11 @@ import {
 } from "@chainlink/cre-sdk";
 import { EVM_PB } from "@chainlink/cre-sdk/pb";
 import { keccak256, stringToHex } from "viem";
-import { z } from "zod";
-import { assertFresh, chunkRows, encodeReport, normalizeSnapshot, parseFrozenFeed, type SnapshotRow } from "./snapshot";
-
-const configSchema = z.object({
-  // 6-field cron (seconds first). Daily at 00:30 UTC by default (after the backend freeze job).
-  schedule: z.string(),
-  // Clippo backend base URL; the workflow calls GET {backendUrl}{feedPath}[?day=YYYY-MM-DD]
-  backendUrl: z.string().url(),
-  // Frozen daily feed: { day, hash, rows }. Default /api/snapshots/daily.
-  feedPath: z.string(),
-  // Reject a snapshot whose day is older than this many UTC days (staleness / replay of an old feed).
-  maxStalenessDays: z.number().int().min(0),
-  // Rows per signed report (keeps each onReport under the gas budget).
-  maxRowsPerReport: z.number().int().min(1),
-  evm: z.object({
-    chainSelectorName: z.string(), // e.g. "arc-testnet"
-    isTestnet: z.boolean(),
-    // ClippoReportReceiver (the reporting adapter registered as ClippoEscrow.reportAdapter)
-    receiverAddress: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
-    gasLimit: z.string(), // per report
-  }),
-});
-
-type Config = z.infer<typeof configSchema>;
+import { configSchema, httpTriggerConfig, type Config } from "./config";
+import { assertFresh, chunkRows, encodeReport, normalizeSnapshotWithStats, parseFrozenFeed, type SnapshotRow } from "./snapshot";
 
 /** What every node returns; each field must be IDENTICAL across nodes (frozen backend snapshot). */
-type NodeView = { day: string; hash: string; rows: string };
+type NodeView = { day: string; hash: string; rows: string; dropped: number };
 
 /**
  * Runs on EACH node: fetch the frozen snapshot, validate + canonicalise rows, and return {day, hash, rows}
@@ -54,8 +32,8 @@ const fetchSnapshot = (sendRequester: HTTPSendRequester, config: Config, day: st
   const res = sendRequester.sendRequest({ url: `${config.backendUrl}${config.feedPath}${qs}`, method: "GET" }).result();
   if (!ok(res)) throw new Error(`snapshot request failed: HTTP ${res.statusCode}`);
   const feed = parseFrozenFeed(json(res));
-  const rows = normalizeSnapshot(feed.rows);
-  return { day: feed.day, hash: keccak256(stringToHex(rows)), rows };
+  const { json: rows, dropped } = normalizeSnapshotWithStats(feed.rows);
+  return { day: feed.day, hash: keccak256(stringToHex(rows)), rows, dropped };
 };
 
 const settle = (runtime: Runtime<Config>, requestedDay: string): string => {
@@ -67,10 +45,11 @@ const settle = (runtime: Runtime<Config>, requestedDay: string): string => {
     .sendRequest(
       runtime,
       fetchSnapshot,
-      ConsensusAggregationByFields<NodeView>({ day: identical, hash: identical, rows: identical }),
+      ConsensusAggregationByFields<NodeView>({ day: identical, hash: identical, rows: identical, dropped: identical }),
     )(cfg, requestedDay)
     .result();
   runtime.log(`snapshot agreed: day=${agreed.day} hash=${agreed.hash}`);
+  if (agreed.dropped > 0) runtime.log(`WARNING: dropped ${agreed.dropped} invalid snapshot row(s) during normalisation`);
 
   // 2. Staleness guard (DON time) + empty feed
   assertFresh(agreed.day, runtime.now(), cfg.maxStalenessDays);
@@ -107,6 +86,9 @@ const settle = (runtime: Runtime<Config>, requestedDay: string): string => {
       })
       .result();
 
+    // TODO(ItemFailed): ClippoReportReceiver swallows per-item reverts and emits ItemFailed, so a SUCCESS write may
+    // still have credited nothing for some/all rows. WriteReportReply (cre-sdk) exposes no receipt logs, so this cannot
+    // be detected here; a read-back of ClippoEscrow state (or an off-workflow ItemFailed log scan) is needed.
     if (resp.txStatus !== TxStatus.SUCCESS) {
       throw new Error(`writeReport batch ${i + 1}/${batches.length} failed: ${resp.errorMessage ?? resp.txStatus}`);
     }
@@ -141,8 +123,8 @@ const initWorkflow = (config: Config) => {
   const httpTrigger = new cre.capabilities.HTTPCapability();
   return [
     cre.handler(cron.trigger({ schedule: config.schedule }), onCron),
-    // authorizedKeys: add the EVM address(es) allowed to trigger a DEPLOYED workflow; simulation needs none.
-    cre.handler(httpTrigger.trigger({}), onHttp),
+    // authorizedKeys come from config.httpAuthorizedKeys; production sets requireHttpAuthorizedKeys so startup fails if empty.
+    cre.handler(httpTrigger.trigger(httpTriggerConfig(config)), onHttp),
   ];
 };
 

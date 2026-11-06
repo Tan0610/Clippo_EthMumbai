@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Deploys MockUSDC + ClippoEscrow + ClippoReportReceiver on a LOCAL anvil fork of Arc testnet and seeds campaigns 1..12
 # (7 and 12 Approved PerView campaigns, matching the shared fixture's campaign ids).
-# Prereq:  anvil --fork-url https://rpc.testnet.arc.network --port 8545 --chain-id 5042002   (fork keeps the real MockKeystoneForwarder)
+# Prereq:  anvil --fork-url https://rpc.testnet.arc.io --port 8545 --chain-id 5042002   (fork keeps the real MockKeystoneForwarder)
 # Usage:   bash scripts/local-chain.sh        -> writes scripts/.local-chain.env (addresses) and prints them
 set -euo pipefail
 export PATH="$HOME/.foundry/bin:$PATH"
