@@ -5,11 +5,13 @@ Commands are from `contracts/README.md`, `cre/README.md` and `web/API.md`. Items
 ## 1. Deploy contracts to Arc testnet
 
 Follow `contracts/README.md` (exact commands, env table, post-deploy checklist). In short:
+> Arc tooling note: Arc docs recommend `arc-forge` / `arc-cast` (Arc Foundry fork, https://docs.arc.io/arc/tutorials/install-arc-foundry.md), e.g. `arc-forge create src/X.sol:X --rpc-url $ARC_TESTNET_RPC_URL --private-key $PRIVATE_KEY --broadcast`. Plain `forge` may work for tests, but deployment should use `arc-forge` per Arc docs (not run here). Arc requires `maxFeePerGas >= 20 Gwei`; see `docs/tracks/ARC.md`.
 
 ```bash
 cd contracts && forge build && forge test
 export ADMIN_ADDRESS=0x... FORWARDER_ADDRESS=0x... UPDATER_ADDRESS=0x... EXPECTED_WORKFLOW_OWNER=0x...   # required (or INSECURE_SKIP_WORKFLOW_CHECK=true, simulation only)
-forge script script/Deploy.s.sol --rpc-url https://rpc.testnet.arc.network --broadcast --private-key $PRIVATE_KEY
+forge script script/Deploy.s.sol --rpc-url https://rpc.testnet.arc.io --chain-id 5042002 --broadcast --private-key $PRIVATE_KEY   # PRIVATE_KEY: testnet-only key, read by forge, not by Deploy.s.sol
+# or from the repo root: node scripts/deploy-arc.mjs --deploy   (validates the same env names, then writes web/.env.local and the CRE config)
 cd ../web && npm run abi:sync
 ```
 
@@ -21,6 +23,7 @@ The script prints `ESCROW_ADDRESS`, `ESCROW_DEPLOY_BLOCK`, `REFERRAL_ADDRESS`, `
 2. **Core:** `SESSION_SECRET`, `ADMIN_WALLETS`, `CRON_SECRET`.
 3. **Chain:** `ESCROW_ADDRESS`, `ESCROW_DEPLOY_BLOCK`, optional `PROFILE_ADDRESS`, `REFERRAL_ADDRESS`, `UPDATER_PRIVATE_KEY` (testnet-only key registered with `setUpdater`).
 4. **World ID 4.0:** Developer Portal -> create the app, enable World ID 4.0 (RP registration), keep `app_id`, `rp_id`, `signing_key`; create actions `clippo-creator-signup`, `clippo-approve-campaign`, `clippo-approve-split` (unlimited verifications for the two approval actions). Set `WORLD_ID_APP_ID`, `WORLD_ID_RP_ID`, `WORLD_ID_SIGNING_KEY` (use `WORLD_ID_ENVIRONMENT=staging` with the simulator).
+   Agent Pass step-up is configured separately: auth.world.org step-up (`WORLD_AUTH_CLIENT_ID`, `WORLD_AUTH_CLIENT_SECRET`, `WORLD_AUTH_ISSUER`, `WORLD_AUTH_REDIRECT_URI`, `WORLD_AUTH_TOKEN_AUTH`, `WORLD_AUTH_ACR`, `WORLD_AUTH_POLICY`; see `DEPLOY_ENV.md`) is a SEPARATE registration from the Developer Portal app used for IDKit (`WORLD_ID_*`). The redirect URI must be registered exactly as `https://<host>/api/auth/world/callback` (localhost over http is likely unsupported: use an HTTPS tunnel or the deployed URL). Sandbox client IDs have a lead time of about 1 hour via a World contact. Nothing here has been run live. Full list of manual steps: `docs/WORLD_USER_TODO.md`.
 5. **AI (text: verifier, campaign writer, assistants):** either provider, switch with `LLM_PROVIDER=gemini|anthropic`.
    - **Free option, no credit card:** create a key at <https://aistudio.google.com/apikey> and set `GEMINI_API_KEY` (optionally `GEMINI_TEXT_MODEL`, default `gemini-3.5-flash-lite`). With only this key set, Gemini is selected automatically.
    - **Claude:** `ANTHROPIC_API_KEY` (`ANTHROPIC_MODEL`). If both keys are set and `LLM_PROVIDER` is empty, Anthropic is used. If neither is set the AI endpoints answer 503 `NOT_CONFIGURED` naming both options.
@@ -52,7 +55,7 @@ Tests: `npm test` (spins up its own throwaway Postgres; no setup). Production bu
 
 ## 5. Seed / first run
 
-No seed script exists. Sign in with a real wallet (SIWE); in development only, `x-wallet` / unsigned sign-in works for quick checks.
+Demo data: `cd web && node --env-file-if-exists=.env.local --env-file-if-exists=.env scripts/seed-demo.mjs [--reset] [--ui-only]` writes clearly labelled `[SEED]` rows through Prisma (see the header of that script; never run it against the production DB). For a real first run, sign in with a real wallet (SIWE); in development only, `x-wallet` / unsigned sign-in works for quick checks.
 
 1. Admin signs in (`ADMIN_WALLETS`). Campaigner and creators sign in.
 2. Creator: World ID check through IDKit (`POST /api/worldid/rp-signature`, then `POST /api/worldid/verify` with the IDKit result).
