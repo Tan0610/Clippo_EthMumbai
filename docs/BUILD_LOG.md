@@ -44,6 +44,25 @@ Track status at the start:
 
 ## Log
 
+### 6. Docs corrected and a focus guide added, commit pending
+
+- **What:** two review passes fixed false and stale claims in the README, the track write-ups, the Arc submission file, the architecture text, the API reference and the deploy docs. Then a second pass removed contradictions between the docs. Added `docs/FOCUS.md` (plan, rules, what we may claim, order of work, prize checklists). Merged `main`'s two docs commits into this branch (`a7b30b9`) so their Arc claims could be corrected here.
+- **Main corrections:**
+  - Arc Studio: nothing was built or deployed with it. The contracts were written and tested in Foundry. The docs now say Studio is not created yet.
+  - Video: the limit is 2 to 4 minutes (was written as 5, and 4:30 for the script).
+  - Escrow: two OLD escrows are on Arc (`0xd845...c39c` is what the live site uses; `0xc7b9...e310` was cited in the Arc file). The new enforcing escrow is not deployed. No doc calls either old one "the" deployed contract.
+  - World Agent Pass: the official product is the OIDC service at `auth.world.org`. The AgentKit code is not it.
+  - CRE: the workflow now simulates; the docs say what ran (empty live feed, local fork credit) and what did not. The feed is `/api/snapshots/daily`.
+  - AI verifier: Claude or Gemini (`LLM_PROVIDER`), not Claude only.
+- **Files:** `README.md`, `contracts/README.md`, `cre/README.md`, `web/API.md`, `docs/*.md`, `docs/tracks/*.md`, `docs/architecture.svg` (text only), new `docs/FOCUS.md`.
+- **How checked:** each edit was read against the code by a second reviewer, and a cross-doc pass compared all files. Nothing was run or deployed. Test counts are copied from this log, not re-run.
+- **Not proven / left open:**
+  - `docs/architecture.svg` still draws the older design (no humanAttestor, registerHuman, disputes, OIDC step-up). It needs a redraw.
+  - `web/scripts/e2e-chain.mjs` and `e2e-api.mjs` still target the old design.
+  - The demo script timings (3:50 total) were never rehearsed, and the claim step in it has no live path yet.
+  - `main` carries these docs but not the feature-branch code, so some docs describe code that is only on `feat/core-sponsor-integration`.
+  - No LICENSE file; the owner must choose one.
+
 ### 5. Official World Agent Pass step-up, commit `19205ba`
 
 - **What:** approving an agent's split now needs a fresh OIDC step-up at `auth.world.org` (code flow with PKCE). The backend checks the ID token, issues a one-time token bound to the exact split, and signs the approval the escrow checks. IDKit stays only for "Build it myself" splits.
@@ -111,7 +130,7 @@ Track status at the start:
 1. Deploy the new contracts on Arc (you sign), then set the real receiver in `cre/.../config.production.json`, the new addresses in Vercel, and `ESCROW_DEPLOY_BLOCK`.
 2. Build and show the work in Arc Studio, and get the shareable project URL.
 3. Run one full real flow on Arc: fund, approve, CRE report, claim, dispute. Save the transaction hashes here.
-4. Update `docs/tracks/agent-pass-demo.md` and the other stale docs, write the IDKit credential rationale and debrief, add an architecture diagram.
+4. Write the IDKit credential rationale and debrief (only after a real run), and redraw `docs/architecture.svg` for the new design.
 5. Record the demo video (under 4 minutes), fill `docs/SUBMISSION_CHECKLIST.md`, submit before the deadline.
 
 ## Known gaps
@@ -119,4 +138,5 @@ Track status at the start:
 - Nothing from our changes has run on real Arc yet.
 - The live site still has no `YOUTUBE_API_KEY` and still runs the old build.
 - `e2e-chain.mjs` was not updated for the new contract.
-- Old docs still describe the previous design: `docs/ARCHITECTURE.md`, `docs/TRACKS.md`, `docs/tracks/agent-pass-demo.md`, `docs/DEMO_SCRIPT.md`.
+- `docs/architecture.svg` still shows the older design; the e2e scripts still target the old escrow.
+- Read `docs/FOCUS.md` before starting new work.

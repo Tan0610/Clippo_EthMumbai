@@ -1,6 +1,6 @@
 # Backend conformance: Unified PRD vs web/src/lib, web/src/app/api, web/prisma
 
-Audit of "Clippo — Unified PRD.md" (sections 3, 4.1-4.11, 5-8) against the backend, 2026-10-28.
+Audit of "Clippo — Unified PRD.md" (sections 3, 4.1-4.11, 5-8) against the backend, 2026-10-28. Updated 2026-11-06 for the code at HEAD of `feat/core-sponsor-integration` (commits 498f649, 292d107, dfd0d51, 6f74f7b, 19205ba): rows #9, #15, #20, #21, #35, #52, #56, #69, #71 changed. A DONE here means the code and its tests exist in the repo (tests run against test doubles). It does not mean the flow ran on Arc or against a real provider. Nothing from the 2026-11-06 work has run against a deployed enforcing escrow.
 Status: DONE / PARTIAL / MISSING. **Before** = state when the audit started, **After** = after the fixes in this pass.
 Test keys: `PC` src/lib/prd-conformance.test.ts (new), `BI` src/lib/backend.integration.test.ts, `PA` src/lib/platform-agents.e2e.test.ts,
 `TI` src/lib/chain/trust.integration.test.ts, `WS` src/lib/workspace/workspace.test.ts, `VT` src/lib/ai/verifier.test.ts,
@@ -21,21 +21,21 @@ Test keys: `PC` src/lib/prd-conformance.test.ts (new), `BI` src/lib/backend.inte
 | 6 | 3.4 Verified creators browse, join, post, submit links | `campaigns` GET (APPROVED only), `campaigns/[id]/eligibility`, `submissions` POST | PC, PA, WS | DONE | DONE |
 | 7 | 3.5 AI checks each link: approve / reject / human | `submissions` POST -> `lib/ai/verifier.ts` | VT, PA | DONE | DONE |
 | 8 | 3.6 Views recorded daily or manual approval by payout rule | `lib/snapshots.ts` `refreshSnapshots`, `snapshots/*`; `campaigns/[id]/split` | BI, TI | DONE | DONE |
-| 9 | 3.7 Creators claim | `payouts/[id]/claim` (verifies the `Claimed` receipt) | TI | DONE | DONE |
+| 9 | 3.7 Creators claim | `payouts/[id]/claim` (the backend wallet calls `claimFor`, or the creator passes a `txHash`; either way the `Claimed` receipt is verified) | TI | DONE | DONE |
 | 10 | 3.8 / 4.1 Close, unspent returns to campaigner | `campaigns/[id]/close` (needs on-chain `Closed`) | TI | DONE | DONE |
 | 11 | 4.3 Q1 "What are you promoting": free text -> full story | `wizard/suggest` (`writeCampaign`), `wizard/aeo` | AG (AEO), PC, E2E | DONE | DONE |
 | 12 | 4.3 Q2 Content: upload / link / AI video (each option) | `uploads`, `campaigns/[id]/source` (uploadId / url / jobId), `ai-video/jobs*` | PC (all 3 persisted), PA, E2E | DONE | DONE |
 | 13 | 4.3 Q3 Platforms YouTube / X / Instagram (one or more) | `campaigns` POST (`platforms` min 1), submissions enforce platform | PC (single and multi sets), PL | DONE | DONE |
 | 14 | 4.3 Q4 Payout: per view / approve split / share pool | `campaigns` POST `payoutMode` + required-field rules | PC (valid + each missing-field 400) | DONE | DONE |
-| 15 | 4.3 Q5 Pool share basis: views / approved clips | `poolShareBasis` (required for POOL_SHARE) | PC | DONE | DONE |
+| 15 | 4.3 Q5 Pool share basis: views / approved clips | `campaigns` POST: `POOL_SHARE` with `APPROVED_CLIPS` is now refused (400) and POOL_SHARE is stored as `VIEWS` (for other modes the basis is ignored and stored as null), because the enforcing escrow shares the pool by CRE-reported views (commit 292d107). `APPROVED_CLIPS` survives only in `lib/earnings.ts` for older rows | PC (APPROVED_CLIPS rejected) | DONE | PARTIAL (views only) |
 | 16 | 4.3 Q6 Approver: only me / me and an admin | `approver` (required for HUMAN_SPLIT); `split` 2-party | PC, TI (two-party and single) | DONE | DONE |
 | 17 | 4.3 Q7 Pool size and view target: AI suggestions, editable | `suggestPools` (3 tiers; rate only for PER_VIEW); `campaigns` POST accepts edits | PC | DONE | DONE |
 | 18 | 4.3 Q8 Who can join: anyone verified / higher-ranked only | `eligibility`; `lib/workspace/eligibility.ts` (tier >= RISING) | WS, PC | DONE | DONE |
-| 19 | 4.4 Per verified view (rate per 1,000, cap by pool, new views only) | escrow `reportViews` fed by `snapshots/latest` (cumulative); `earnings.ts` estimate | BI, WS (marketplace math), contracts tests | DONE | DONE |
-| 20 | 4.4 Human-verified split: AI pre-scores, human(s) approve, fresh human check | `campaigns/[id]/split` (+propose, audit), `lib/agentpass/*`, `lib/worldid/fresh.ts` | TI, AP | DONE | DONE |
-| 21 | 4.4 Pool share: whole pool divided by share of verified views OR approved clips | **new** `campaigns/[id]/pool-share` + `lib/poolshare.ts` produce the escrow `setWeights` arguments per the chosen basis; escrow pays pro rata at close | PC (both bases, rejected clips excluded, 403/409) | MISSING (no code computed the weights; only an earnings estimate existed) | DONE |
+| 19 | 4.4 Per verified view (rate per 1,000, cap by pool, new views only) | escrow `reportViews` fed by `snapshots/daily` through the CRE workflow (cumulative); `earnings.ts` estimate | BI, WS (marketplace math), contracts tests | DONE | DONE |
+| 20 | 4.4 Human-verified split: AI pre-scores, human(s) approve, fresh human check | `campaigns/[id]/split` (+propose, audit), `lib/agentpass/*`, `lib/worldid/fresh.ts`. The agent's split needs a World IdP step-up (`agentpass/stepup/*`, commit 19205ba); a split the approver built uses an IDKit proof. The backend wallet signs the approval the escrow checks (`approveSplit(..., proof)`) | TI, AP, `lib/agentpass/stepup.integration.test.ts` (local fake issuer) | DONE | DONE (step-up not run against the real issuer; escrow check not run on a deployed escrow) |
+| 21 | 4.4 Pool share: whole pool divided by share of verified views OR approved clips | The 2026-10-28 `campaigns/[id]/pool-share` route, `lib/poolshare.ts` and its test were deleted in 292d107. Pool share is now by CRE-reported views only: `snapshots/daily` feeds the CRE workflow, the escrow credits creators. No approved-clips basis in the new flow | none (the old PC case was removed) | MISSING (no code computed the weights; only an earnings estimate existed) | PARTIAL (views only; approved-clips basis dropped) |
 | 22 | 4.4 All modes: creators claim, every settlement step visible to both sides | `payouts`, `creator/earnings`, `campaigns/[id]/split` GET, `dashboard/*` | WS, BI | DONE | DONE |
-| 23 | 4.5 Fee in 0.1 to 0.5 range (percent, to confirm) | `lib/chain/fees.ts`: **now clamps to 10..50 bps**, default 25 bps; on-chain values are read from the escrow | PC (boundaries 0/10/50/51), E2E | PARTIAL (env accepted 0..50 bps) | DONE |
+| 23 | 4.5 Fee in 0.1 to 0.5 range (percent, to confirm) | `lib/chain/fees.ts`: the web env fallback only clamps to 10..50 bps, default 25 bps (the contract itself allows 0..50); on-chain values are read from the escrow | PC (boundaries 0/10/50/51), E2E | PARTIAL (env accepted 0..50 bps) | DONE |
 | 24 | 4.5 Both sides pay: campaigner at funding, creator at claiming | `fundPreview`, `claimPreview`, `creatorFeeBps` snapshots | CT, PC, E2E | DONE | DONE |
 | 25 | 4.6 Admin queue: campaigns, flagged clips, appeals, unusual view patterns | `admin/queue`, `admin/flags/[id]` | PC (all four lists), E2E | DONE | DONE |
 | 26 | 4.6 Admin assistant summarises disputes, ranks queue | `assistant/admin/disputes`, `assistant/admin/growth*`, `lib/agents/admin.ts` | AG, PA | DONE | DONE |
@@ -47,7 +47,7 @@ Test keys: `PC` src/lib/prd-conformance.test.ts (new), `BI` src/lib/backend.inte
 | 32 | 4.8 Creator agent: explain brief, warn before submit, suggest campaigns | `assistant/creator/{explain,check,matches}` | AG, PA | DONE | DONE |
 | 33 | 4.8 Admin agent: flagged items, disputes, suspicious growth | `assistant/admin/*` | AG | DONE | DONE |
 | 34 | 4.8 Negotiator proposes within both sides' limits; both accept | `campaigns/[id]/deal*`, `lib/agents/negotiator.ts`, `lib/deals.ts` | AG, PA | DONE | DONE |
-| 35 | 4.8 Guardrail: agents never release payouts; high-value needs fresh unique-human | static guardrail tests; `campaigns/[id]/attest` + `approve` (428 `HUMAN_CONFIRMATION_REQUIRED`); every split approval consumes a fresh proof | AG guardrail, AP guardrail, TI | DONE | DONE |
+| 35 | 4.8 Guardrail: agents never release payouts; high-value needs fresh unique-human | static guardrail tests; `campaigns/[id]/attest` + `approve` (428 `HUMAN_CONFIRMATION_REQUIRED`); every split approval consumes a fresh proof or step-up token; the escrow contract checks the backend-signed approval | AG guardrail, AP guardrail, TI | DONE | DONE |
 | 36 | 4.9 Vetted tiered directory, creator-set rates | `creators`, `creators/profile`, `lib/workspace/hires.ts` `listCreators` | WS, E2E (unverified hidden) | DONE | DONE |
 | 37 | 4.9 Shareable shortlists, structured briefs, approvals with live budget | `shortlists*`, `briefs*`, `hires*` | WS, E2E | DONE | DONE |
 | 38 | 4.9 One funding action covering every creator | `hires/[id]/fund` (one HUMAN_SPLIT campaign, preset amounts) | WS | DONE | DONE |
@@ -64,11 +64,11 @@ Test keys: `PC` src/lib/prd-conformance.test.ts (new), `BI` src/lib/backend.inte
 | 49 | 4.2 Borderline/low confidence -> campaigner (and admin if chosen) | NEEDS_HUMAN visible to campaigner via `campaigns/[id]/submissions`, resolved by `submissions/[id]/verdict`; **`admin/queue` now scopes** `flaggedSubmissions` to clips the admin owns: `approver = CAMPAIGNER_AND_ADMIN`, an `unreadable` clip (4.7), or a clip with an open fraud flag (4.6/8) | PA, PC (queue: chosen/unreadable/fraud included, campaigner-only excluded) | PARTIAL | DONE |
 | 50 | 4.2 Every verdict + reason stored, visible to the creator, who can appeal | `submissions` GET, `submissions/[id]/appeal`, `appeals*` (campaigner first, SLA, admin escalation) | `appeals.test.ts`, PA | DONE | DONE |
 | 51 | 4.2 Clip text is data only (prompt injection) | delimiters + nonce, sanitising, `detectInjection` downgrade | VT (injection suite) | DONE | DONE |
-| 52 | 4.2 Only approved clips earn | snapshots / earnings / pool-share filter `verdict = APPROVE`, `clipStatus = LIVE` | BI, PC | DONE | DONE |
+| 52 | 4.2 Only approved clips earn | snapshots / earnings filter `verdict = APPROVE`, `clipStatus = LIVE` | BI, PC | DONE | DONE |
 | 53 | 8 Fake/inflated views flagged | `antifraud/anomaly.ts`, `FraudFlag`, feed hold to the day before the flag | AN, TI | DONE | DONE |
 | 54 | 8 Retention window before final payout | `releaseAt` tranches (escrow `retentionPeriod`, default 7 d), claim preview `claimable` | TI | DONE | DONE |
 | 55 | 8 Clip deleted after payout: unpaid balance rules | `antifraud/availability.ts` + `flags.ts`: freeze unclaimed balance, refuse claim (409 `PAYOUT_FROZEN`), restore on dismiss | TI | DONE | DONE |
-| 56 | 4.1 Escrowed pools, many campaigns, one deployment | `contracts/src/ClippoEscrow.sol`; `chain/*` | CT, TI (contracts: forge tests) | DONE | DONE |
+| 56 | 4.1 Escrowed pools, many campaigns, one deployment | `contracts/src/ClippoEscrow.sol` (enforcing design since 498f649: World ID and CRE enforced in the contract, disputes, `claimFor`, `humanAttestor`); `chain/*` | CT, TI (contracts: forge tests, not re-run for this update) | DONE | DONE in code. The enforcing escrow is not deployed. The two escrows on Arc testnet (`0xd8453c22996bea11598a3dbf05112675b945c39c`, which the live site's `/api/chain/config` uses, and `0xc7b9588ee0a4bff31e17ece1141ea404ad05e310`) are the older design |
 | 57 | 4.1 Cumulative views daily, only new views paid, pool cap | `ViewSnapshot` (monotonic per day), `snapshots/latest` + frozen `snapshots/daily`; credit logic in the escrow | BI (CRE contract fixture) | DONE | DONE |
 | 58 | 4.1 Pull payments | claim flow above | TI | DONE | DONE |
 | 59 | 4.1 One person, one account (unique human) | `worldid/verify` + unique nullifier, `assertVerifiedHuman` on channel/deal/submission/claim | SI | DONE | DONE |
@@ -81,9 +81,9 @@ Test keys: `PC` src/lib/prd-conformance.test.ts (new), `BI` src/lib/backend.inte
 | 66 | 5 USDC only, all on-chain, no cash-out | no off-ramp routes; on-chain claim | PC (route scan) | DONE | DONE |
 | 67 | 5 Funding via on-ramp | `onramp/session`, `onramp/webhook` (Transak JWT) | BI | DONE | DONE |
 | 68 | 5 Chain endpoints fail loudly without an escrow (NOT_CONFIGURED, no mock) | `lib/chain/guards.ts` `chainMode()`; **fixed** `POST /api/chain/sync` returned a bare 500 without an escrow, now 503 `CHAIN_NOT_CONFIGURED` | PC, E2E | PARTIAL (500) | DONE |
-| 69 | 6.1 CRE: one frozen snapshot per day, numeric campaign ids | `snapshots/latest` (numeric on-chain ids), `snapshots/daily` (UTC-day frozen + hash/ETag) | BI (shared CRE fixture), E2E | DONE | DONE |
+| 69 | 6.1 CRE: one frozen snapshot per day, numeric campaign ids | `snapshots/latest` (numeric on-chain ids; PER_VIEW and POOL_SHARE campaigns only), `snapshots/daily` (UTC-day frozen + hash/ETag). The CRE workflow simulates (6f74f7b); not deployed, single-node simulator, `config.production.json` still has a zero receiver. CRE reads Clippo's snapshot feed, not YouTube | BI (shared CRE fixture), E2E | DONE | DONE for the feed; the workflow is not deployed |
 | 70 | 6.2 IDKit: backend validates, then marks verified | `worldid/verify`, `worldid/rp-signature`, `lib/worldid/*` | SI, BI | DONE (credentials needed) | DONE (credentials needed) |
-| 71 | 6.2 Agent Pass: fresh World ID check before release; cancelled / expired / repeated leave action undone | `split`, `attest`, `lib/agentpass/*`, `lib/worldid/fresh.ts`, audit log | AP, TI | DONE | DONE |
+| 71 | 6.2 Agent Pass: fresh World ID check before release; cancelled / expired / repeated leave action undone | `split`, `attest`, `lib/agentpass/*`, `lib/worldid/fresh.ts`, audit log. The official Agent Pass is the OIDC service at auth.world.org; the repo's step-up (`agentpass/stepup/*`) targets it but has never run against it or in a browser. The older AgentKit/AgentBook code is not the official Agent Pass | AP, TI, step-up integration test (local fake issuer) | DONE | DONE in code; not proven against the real issuer |
 | 72 | 8 AI-generated video rights | `rightsConfirmed` required on job creation + launch gate | PA, VD | DONE | DONE |
 
 ## Counts
@@ -92,24 +92,26 @@ Test keys: `PC` src/lib/prd-conformance.test.ts (new), `BI` src/lib/backend.inte
 |---|---|---|---|---|
 | Before | 66 | 5 | 1 | 72 |
 | After (2026-10-28) | 70 | 2 | 0 | 72 |
-| Now (2026-11-04) | 72 | 0 | 0 | 72 |
+| 2026-11-04 | 72 | 0 | 0 | 72 |
+| Now (2026-11-06) | 70 | 2 | 0 | 72 |
 
 Rows changed 2026-10-28: #21 MISSING -> DONE, #23 PARTIAL -> DONE, #45 PARTIAL -> DONE, #68 PARTIAL -> DONE.
 Rows changed 2026-11-04: #46 PARTIAL -> DONE, #49 PARTIAL -> DONE.
+Rows changed 2026-11-06: #15 DONE -> PARTIAL and #21 DONE -> PARTIAL (pool share is by views only after 292d107). Rows #9, #20, #35, #52, #56, #69, #71 were reworded, status unchanged.
 Untested-before rows now covered by PC: #4, #5, #12-#18, #25, #40, #41, #60, #66.
 
 ## Fixes made in this pass
 
-1. **Pool share weights (new).** `GET /api/campaigns/:id/pool-share` + `lib/poolshare.ts`: weights per creator wallet from verified views or approved clips (campaign `poolShareBasis`), live approved clips only, anomaly holds respected, plus the exact `setWeights(id, creators[], weights[])` arguments. Owner/admin only, APPROVED POOL_SHARE campaigns only. Moves no money.
+1. **Pool share weights (new on 2026-10-28, removed 2026-11-06).** `GET /api/campaigns/:id/pool-share` + `lib/poolshare.ts` computed `setWeights` arguments. Both were deleted in 292d107 (the route no longer exists). The enforcing escrow shares the pool by CRE-reported views, so no weights are computed or sent.
 2. **Disclosure label / prohibited claims backstop** in `lib/ai/verifier.ts` (`checkStoryRules`): text can only downgrade an approval to human review.
-3. **Fee range**: `lib/chain/fees.ts` env fees clamp to 10..50 bps (0.1-0.5%), fallback 25 bps.
+3. **Fee range**: `lib/chain/fees.ts` the web env fallback fees clamp to 10..50 bps (0.1-0.5%), fallback 25 bps (web fallback only, the contract allows 0..50).
 4. **`POST /api/chain/sync` 500 -> 503**: `liveDeps()` in `lib/chain/indexer.ts` is a default argument evaluated before the caller's own check; it now throws 503 `CHAIN_NOT_CONFIGURED` (also protects `processReceipt`).
 5. **Test-suite regression from a concurrent edit**: `assertOnchainState` (lib/chain/guards.ts) had gained an unconditional `syncChain()` that hit the live Arc RPC (429) in three existing tests. It is now skipped when the `escrowReader` test double is installed; production behaviour is unchanged.
-6. Tests: `src/lib/prd-conformance.test.ts` (13 cases) and the HTTP script `web/scripts/e2e-api.mjs` (32 steps).
+6. Tests: `src/lib/prd-conformance.test.ts` (13 `it` cases at HEAD; the pool-share case was removed in 292d107) and the HTTP script `web/scripts/e2e-api.mjs` (32 steps at HEAD; the "pool share" step is now empty).
 
-## HTTP end-to-end run (web/scripts/e2e-api.mjs, 32/32 PASS)
+## HTTP end-to-end run (web/scripts/e2e-api.mjs, 32/32 PASS on 2026-10-28; not re-run at HEAD)
 
-Run against `next dev` on :3231 (own `NEXT_DIST_DIR`) with an isolated PGlite DB on :5461, because the shared 3217 server / :5433 DB was answering `DATABASE_UNAVAILABLE` / 500 (its single connection was wedged by another process; I did not touch it). Steps: SIWE sign-in x2 with random keys (replay and forged signature refused) · role gates · admin via dev bypass · wizard suggest · create per payout mode + 400s · draft privacy · fund preview (fees in range) · fund POST = 503 NOT_CONFIGURED · admin approve = 503 NOT_CONFIGURED · admin reject of a draft · admin queue · pool-share gating · World ID verify / rp-signature = 503 NOT_CONFIGURED · channel proof = 403 NOT_VERIFIED · submission gate · appeal/verdict gates · claim 404 · upload + Range 206 + download + spoof 415 · source link validation · AI video 400 / 503 NOT_CONFIGURED · creator profile (unverified hidden from directory) · shortlist/brief/hire · dashboards, leaderboard, trending · snapshots latest (numeric ids) and daily (frozen) · chain config / sync = 503 · on-ramp 503 · optional modules 404 FEATURE_DISABLED (6 routes) · out-of-scope 404s · assistant gating.
+Run against `next dev` on :3231 (own `NEXT_DIST_DIR`) with an isolated PGlite DB on :5461, because the shared 3217 server / :5433 DB was answering `DATABASE_UNAVAILABLE` / 500 (its single connection was wedged by another process; I did not touch it). Steps: SIWE sign-in x2 with random keys (replay and forged signature refused) · role gates · admin via dev bypass · wizard suggest · create per payout mode + 400s · draft privacy · fund preview (fees in range) · fund POST = 503 NOT_CONFIGURED · admin approve = 503 NOT_CONFIGURED · admin reject of a draft · admin queue · pool-share gating (step emptied in 292d107; the script's create step still sends poolShareBasis APPROVED_CLIPS and expects 201, which the API now refuses with 400, so the script would fail at HEAD until it is updated) · World ID verify / rp-signature = 503 NOT_CONFIGURED · channel proof = 403 NOT_VERIFIED · submission gate · appeal/verdict gates · claim 404 · upload + Range 206 + download + spoof 415 · source link validation · AI video 400 / 503 NOT_CONFIGURED · creator profile (unverified hidden from directory) · shortlist/brief/hire · dashboards, leaderboard, trending · snapshots latest (numeric ids) and daily (frozen) · chain config / sync = 503 · on-ramp 503 · optional modules 404 FEATURE_DISABLED (6 routes) · out-of-scope 404s · assistant gating.
 Not reachable over HTTP without credentials (covered by vitest with doubles instead): verified-creator channel code flow, submission -> verdict, appeal, claim, split approval, fund/approve/reject happy paths.
 
 ## Update 2026-11-04: closed the two PARTIAL rows (#46, #49)
@@ -123,13 +125,16 @@ Tests: `prd-conformance.test.ts` extended (attribution rule/verdict cases; admin
 
 | Gap | Reason |
 |---|---|
-| Real World ID (IDKit / Agent Pass), YouTube/X/Instagram data, escrow + RPC, Transak, LLM and video providers | No credentials exist yet; every real adapter answers 503 NOT_CONFIGURED, by design. Only the test doubles run the happy paths. |
-| Pool share weights are sent by a human wallet (`setWeights`); no server wallet does it | Deliberate: agents/server never release money. |
-| Shared 3217 dev server / :5433 DB | Wedged (DB connection) at audit time; not mine to restart. |
+| Real World ID (IDKit), World IdP step-up, YouTube/X/Instagram data, Transak, LLM and video providers | Not proven end to end. Every real adapter answers 503 NOT_CONFIGURED without credentials, by design. Only the test doubles run the happy paths in this repo. The live site has no `YOUTUBE_API_KEY`. Which other credentials the live site has is not verified here. |
+| Enforcing escrow (498f649: World ID and CRE enforced, disputes, `claimFor`, `humanAttestor`) | Not deployed anywhere. The app code for it (292d107, dfd0d51) has not run on real Arc. The live site still runs the old build against an old-design escrow. |
+| Chainlink CRE workflow | Simulates (6f74f7b); a local `--broadcast` run on an anvil fork of Arc credited creators. Nothing was broadcast to real Arc, no workflow is deployed, the simulator is single-node, and the production config has a zero receiver. |
+| Pool share by approved clips | Dropped in 292d107 (see #15, #21). |
+| `web/scripts/e2e-api.mjs` out of date | Its create step posts a POOL_SHARE campaign with `poolShareBasis` APPROVED_CLIPS and expects 201; the API now answers 400. The script would fail at that step until updated. |
+| Shared 3217 dev server / :5433 DB | Wedged (DB connection) at audit time on 2026-10-28; not rechecked. |
 
 ## PRD ambiguity decisions
 
-- **Fee unit**: 0.1 to 0.5 read as percent per side (10..50 bps); default 25 bps. Config outside the range falls back to 25 bps rather than silently accepting 0.
+- **Fee unit**: 0.1 to 0.5 read as percent per side (10..50 bps); default 25 bps (web env fallback only, the contract allows 0..50). Config outside the range falls back to 25 bps rather than silently accepting 0.
 - **Creator "join"**: there is no separate join action; submitting a link to an APPROVED campaign (with eligibility met) is joining. `campaigns/[id]/eligibility` tells the creator why they cannot.
 - **Creator socials page**: backed by `GET /api/channels` (all linked channels with verification state), not a separate model.
 - **Disclosure matching**: a generic label (`#ad`, `sponsored`, `advertisement`, `paid partnership`) is satisfied by any of those words as whole words in transcript/title/description; a custom label must appear as a phrase. On-screen-only labels cannot be seen, so a missing text label goes to human review rather than REJECT.
