@@ -113,16 +113,24 @@ export function parseLlmVerdict(raw: string) {
 
 const normText = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
 const GENERIC_DISCLOSURES = ["ad", "sponsored", "advertisement", "paid partnership", "paid promotion", "promo"];
+// Crediting signals in normalised text ("h/t" -> "h t"); any of these, or an @mention, counts as attributing the source.
+const ATTRIBUTION_SIGNALS = ["credit", "credits", "credited", "crediting", "courtesy", "via", "source", "sourced", "original", "originally", "attribution", "attributed", "h t", "hat tip", "thanks to", "footage by", "clip by", "video by", "repost", "reposted"];
+const MENTION_RE = /@[a-z0-9_]/i;
 
 /** Whole-phrase match on normalised text (so "ad" does not match "bad"). */
 const hasPhrase = (hay: string, needle: string) => !!needle && ` ${hay} `.includes(` ${needle} `);
 
 /**
- * Deterministic backstop for PRD 4.2 step 3 / risk table: the required disclosure label must appear in the clip's text and no
- * prohibited claim may. A generic label (#ad, sponsored, ...) is satisfied by any of the common sponsorship words. Text can only
- * DOWNGRADE an approval (to human review); it can never approve anything.
+ * Deterministic backstop for PRD 4.2 step 3 / risk table: the required disclosure label must appear in the clip's text, no
+ * prohibited claim may, and when the story requires attribution the clip must carry some crediting signal. A generic label
+ * (#ad, sponsored, ...) is satisfied by any of the common sponsorship words; attribution (free text) is satisfied by any
+ * crediting word or an @mention rather than the literal rule. Text can only DOWNGRADE an approval (to human review); it can
+ * never approve anything.
  */
-export function checkStoryRules(story: Pick<Story, "disclosureLabel" | "prohibitedClaims">, text: string): { missingDisclosure: boolean; prohibitedHit: string | null } {
+export function checkStoryRules(
+  story: Pick<Story, "disclosureLabel" | "prohibitedClaims" | "attribution">,
+  text: string,
+): { missingDisclosure: boolean; prohibitedHit: string | null; attributionMissing: boolean } {
   const hay = normText(text);
   const label = normText(story.disclosureLabel ?? "");
   let missingDisclosure = false;
@@ -131,7 +139,12 @@ export function checkStoryRules(story: Pick<Story, "disclosureLabel" | "prohibit
     missingDisclosure = !ok;
   }
   const prohibitedHit = (story.prohibitedClaims ?? []).filter((p) => normText(p)).find((p) => hasPhrase(hay, normText(p))) ?? null;
-  return { missingDisclosure, prohibitedHit };
+  let attributionMissing = false;
+  if ((story.attribution ?? "").trim()) {
+    const credited = MENTION_RE.test(text) || ATTRIBUTION_SIGNALS.some((g) => hasPhrase(hay, g));
+    attributionMissing = !credited;
+  }
+  return { missingDisclosure, prohibitedHit, attributionMissing };
 }
 
 export function getThreshold(): number {
@@ -220,9 +233,14 @@ export async function verifyClip(
   const rules = checkStoryRules(input.story, [input.transcript, input.title, input.description].join(" "));
   if (rules.prohibitedHit) flags.push("prohibited_claim_suspected");
   if (rules.missingDisclosure) flags.push("disclosure_missing");
-  if (result === "APPROVE" && (rules.prohibitedHit || rules.missingDisclosure)) {
+  if (rules.attributionMissing) flags.push("attribution_missing");
+  if (result === "APPROVE" && (rules.prohibitedHit || rules.missingDisclosure || rules.attributionMissing)) {
     result = "NEEDS_HUMAN";
-    const why = rules.prohibitedHit ? `contains a prohibited claim ("${rules.prohibitedHit}")` : `the required disclosure label "${input.story.disclosureLabel}" was not found in the clip text`;
+    const why = rules.prohibitedHit
+      ? `contains a prohibited claim ("${rules.prohibitedHit}")`
+      : rules.missingDisclosure
+        ? `the required disclosure label "${input.story.disclosureLabel}" was not found in the clip text`
+        : `the clip does not appear to credit the source as required ("${input.story.attribution}")`;
     reason = `Not auto-approved: ${why}; sent to human review. ${reason}`;
   }
   if (dup.kind === "near" && result === "APPROVE") {
