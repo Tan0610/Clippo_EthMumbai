@@ -9,11 +9,14 @@ import { ApiError, ok, readJson, route } from "@/lib/http";
 import { checkFreshProof, consumeProof } from "@/lib/worldid/fresh";
 import { pendingProposals } from "@/lib/proposals";
 import { classifyRefusal, recordAudit } from "@/lib/agentpass/audit";
+import { assertIdentityAllowed, refuse, stepUpConfig, verifyStepUpToken } from "@/lib/agentpass/stepup";
 
 const body = z.object({
   splits: z.array(z.object({ creatorWallet: z.string().min(1), amount: z.number().positive() })).min(1),
-  /** Fresh World ID (Agent Pass) proof for THIS approver's approval. One use only. */
-  worldIdProof: proofSchema,
+  /** World IdP step-up token for THIS approver and THIS split (see /api/agentpass/stepup). Required for an agent's split. One use only. */
+  stepUpToken: z.string().min(1).max(4096).optional(),
+  /** Fresh IDKit proof. Only for a split the approver built themselves; an agent's split must use step-up. One use only. */
+  worldIdProof: proofSchema.optional(),
   /** Agent Pass: the agent's proposal this approval is for. The split must hash-match it. */
   agentProposalId: z.string().optional(),
 });
@@ -22,7 +25,7 @@ const SPLIT_ACTION = "clippo-approve-split";
 
 /**
  * HUMAN_SPLIT approval. Each approver (campaigner, and admin when `approver = CAMPAIGNER_AND_ADMIN`) calls this with the
- * split and their own fresh World ID proof.
+ * split and their own fresh human check: World IdP step-up for the agent's split, an IDKit proof for a split they built.
  *  - The split is canonicalised (wallet-sorted, micro-USDC) and hashed like the contract's `pendingSplit` hash.
  *  - CAMPAIGNER_AND_ADMIN: stays PENDING until BOTH approved the IDENTICAL split. A different split replaces the pending
  *    one and clears the other approval (same as the contract).
@@ -112,7 +115,19 @@ async function approve(req: Request, { params }: Ctx, info: AuditCtx): Promise<R
     if (done) throw new ApiError(409, "ALREADY_APPROVED", `The ${role.toLowerCase()} already approved this exact split`);
   }
 
-  const { proofHash, nullifier } = await checkFreshProof(v.worldIdProof, SPLIT_ACTION, `split:${c.id}:${hash}`);
+  // 5. The agent's split, however it is presented (a client could leave out agentProposalId), needs step-up.
+  if (!v.stepUpToken) {
+    const agentSplit = agentProposal ?? (await db.agentProposal.findFirst({ where: { campaignId: c.id, splitHash: hash, status: "PROPOSED" }, select: { id: true } }));
+    if (agentSplit) throw new ApiError(403, "STEP_UP_REQUIRED", "Approving the agent's split requires a World ID step-up. Nothing was changed.");
+    if (!v.worldIdProof) throw new ApiError(400, "HUMAN_CHECK_REQUIRED", "A fresh World ID check is required");
+  }
+
+  const stepUp = v.stepUpToken ? await verifyStepUpToken(stepUpConfig(), v.stepUpToken, { userId: user.id, campaignId: c.id, splitHash: hash, proposalId: v.agentProposalId ?? null }) : null;
+  if (stepUp) {
+    if (await db.usedProof.findUnique({ where: { proofHash: stepUp.proofHash } })) throw new ApiError(409, "PROOF_REUSED", "That World ID check was already used. Each check works once; nothing was changed.");
+    await assertIdentityAllowed(user, stepUp.identity, stepUp.mayEnroll);
+  }
+  const { proofHash, nullifier } = stepUp ? { proofHash: stepUp.proofHash, nullifier: stepUp.humanId } : await checkFreshProof(v.worldIdProof!, SPLIT_ACTION, `split:${c.id}:${hash}`);
   const attestation = attestationHash({ kind: "SPLIT", campaignKey: c.onchainId ?? c.id, wallet: user.wallet, nullifier, proofHash, splitHash: hash });
   // The escrow only credits wallets linked to a human, and only with this signed approval.
   const wallet = clippoWallet();
@@ -123,6 +138,11 @@ async function approve(req: Request, { params }: Ctx, info: AuditCtx): Promise<R
 
   const result = await db.$transaction(async (tx) => {
     await consumeProof(tx, user, proofHash, SPLIT_ACTION);
+    if (stepUp && !user.worldIdpIdentity) {
+      // First step-up: link the identity only while this account is still unlinked and the identity is unassigned (unique column).
+      const linked = await tx.user.updateMany({ where: { id: user.id, worldIdpIdentity: null }, data: { worldIdpIdentity: stepUp.identity } }).catch(() => ({ count: 0 }));
+      if (linked.count !== 1) throw refuse("wrong_account");
+    }
     await tx.humanAttestation.create({ data: { campaignId: c.id, userId: user.id, kind: "SPLIT", splitHash: hash, attestation, proofHash } });
 
     let proposal = await tx.splitProposal.findFirst({ where: { campaignId: c.id, status: { in: ["PENDING", "AWAITING_CHAIN"] } }, orderBy: { createdAt: "desc" } });
@@ -161,7 +181,7 @@ async function approve(req: Request, { params }: Ctx, info: AuditCtx): Promise<R
     actorRole: role,
     event: "APPROVED",
     outcome: "OK",
-    detail: `${role === "CAMPAIGNER" ? "Campaigner" : "Admin"} approved ${agentProposal ? "the agent's proposal" : "a human-built split"} with a fresh World ID proof (valid, single use). ${result.proposal.status === "AWAITING_CHAIN" ? "All approvals are in; waiting for the escrow to confirm." : "Waiting for the other approver."}`,
+    detail: `${role === "CAMPAIGNER" ? "Campaigner" : "Admin"} approved ${agentProposal ? "the agent's proposal" : "a human-built split"} with ${stepUp ? `a World IdP step-up (${stepUp.acr}, amr ${stepUp.amr.join(" ")}; valid, single use)` : "a fresh World ID proof (valid, single use)"}. ${result.proposal.status === "AWAITING_CHAIN" ? "All approvals are in; waiting for the escrow to confirm." : "Waiting for the other approver."}`,
     splitHash: hash,
     proofStatus: "VALID",
   });
