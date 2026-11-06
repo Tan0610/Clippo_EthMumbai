@@ -45,7 +45,15 @@ Track status at the start:
 
 ## Log
 
-### 13. End-to-end on a local fork: CRE report -> indexer -> Confirmed views, commit pending
+### 14. Browser end-to-end check of the frontend against the real backend, commit pending
+
+- **What:** ran the whole chain locally and checked the screens in a headless Chromium. Anvil fork of Arc, fresh contracts, `cre workflow simulate --broadcast` (3 of 5 clips kept, 1 report, 0 failed rows), a local database seeded with `web/scripts/e2e-confirmed-seed.mjs`, `next dev` pointed at the fork, `POST /api/chain/sync` (real indexer), then `web/scripts/e2e-confirmed-ui.mjs` (new; signs in with the dev wallet bypass).
+- **Result:** 14 of 14 checks passed. Creator b: API confirmed 5300 / pending 750; the proof link is the exact delivery tx of the CRE run. Brand: confirmed 6500 / pending 1050. The ledger and desk show Confirmed, Pending, a Chainlink badge, a proof link and the one-line explainer. The clip slip shows Confirmed with a proof link. An old-format verified channel is flagged `needsReverify`; the Account screen offers "Get my new code"; after the click the wallet-bound code `clippo:<wallet>` is on screen and the API shows the channel unverified until the bio check.
+- **Found and fixed:** the first run crashed the slip page on a seed campaign with an empty story (`mustSay` undefined). That was seed data, not the screen; the seed now has a proper story.
+- **Files:** `web/scripts/e2e-confirmed-seed.mjs`, `web/scripts/e2e-confirmed-ui.mjs`. Screenshots stay out of the repo (they show a fork transaction).
+- **Not proven:** the `/join` channel step was not reached, because it sits behind a World ID check that this local run does not configure; the Account re-verify path was tested instead. Fake YouTube data and a local fork only, one CRE node. The ledger's "Still accruing" estimate (and cost per 1,000 views on the desk) still uses Clippo's own count, so it includes pending views. In the seed the desk's "pool used" shows $0 because no payout rows exist for the credits.
+
+### 13. End-to-end on a local fork: CRE report -> indexer -> Confirmed views, commit `0c3e401`
 
 - **What:** added `web/src/lib/chain/confirmed-views.e2e.test.ts`, skipped unless `E2E_CRE_FORK=1`. Ran the full chain locally: anvil fork of Arc, `cre/scripts/local-chain.sh` (fresh MockUSDC, escrow, receiver, linked creators), the mock backend with a FAKE YouTube key, then `cre workflow simulate --broadcast`. The workflow kept 3 of 5 clips and delivered 1 batch of 3 rows (0 failed). Then the real `syncChain` read the real `ViewsReported` logs into the test database.
 - **Result:** the test passed. Confirmed views from the chain events: campaign 7 creator 0x1111... = 1200, campaign 7 creator 0xabcd... = 300, campaign 12 creator 0xabcd... = 5000; the proof tx hash is a real hash from the fork; `creatorEarnings` totals confirmed = 5300. This also shows the web ABI decodes the freshly built contract's event.
