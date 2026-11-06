@@ -4,7 +4,7 @@ import { defineChain } from "viem";
  * Chain configuration (server). Everything is overridable by env; the Arc testnet values are defaults
  * (verify against the Arc docs before relying on them).
  *
- *  ARC_RPC_URL        JSON-RPC endpoint            (default https://rpc.testnet.arc.network)
+ *  ARC_RPC_URL        JSON-RPC endpoint            (default https://rpc.testnet.arc.io)
  *  ARC_CHAIN_ID       numeric chain id             (default 5042002)
  *  USDC_ADDRESS       USDC ERC-20 (6 decimals)     (default Arc testnet USDC 0x3600...0000)
  *  ESCROW_ADDRESS     deployed ClippoEscrow        (required to enable chain mode)
@@ -12,7 +12,7 @@ import { defineChain } from "viem";
  *  PLATFORM_CAMPAIGNER_FEE_BPS / PLATFORM_CREATOR_FEE_BPS  fallback fees when the chain is unreachable (default 25 / 25)
  */
 export const USDC_DECIMALS = 6;
-const DEFAULT_RPC = "https://rpc.testnet.arc.network";
+const DEFAULT_RPC = "https://rpc.testnet.arc.io";
 const DEFAULT_CHAIN_ID = 5042002;
 const DEFAULT_USDC = "0x3600000000000000000000000000000000000000";
 
