@@ -86,7 +86,9 @@ Check with `npm run doctor` (fetches `{issuer}/.well-known/openid-configuration`
 | Name | Comes from | Scope | Secret | Need |
 |---|---|---|---|---|
 | `GEMINI_API_KEY` | https://aistudio.google.com/apikey | P V | **yes** | REQUIRED when the provider is Gemini (verifier, wizard, assistants). Also needed for AI video |
-| `LLM_PROVIDER` | `gemini` or `anthropic` | P V | no | optional. A key for the chosen provider is REQUIRED: without it the verifier and other AI routes answer 503 `NOT_CONFIGURED` |
+| `LLM_PROVIDER` | `openai`, `gemini` or `anthropic` | P V | no | optional. A key for the chosen provider is REQUIRED: without it the verifier and other AI routes answer 503 `NOT_CONFIGURED`. Auto-pick precedence when unset: anthropic > openai > gemini |
+| `OPENAI_API_KEY` | https://platform.openai.com/api-keys | P V | **yes** | REQUIRED when `LLM_PROVIDER=openai` (verifier, wizard, proposer). Uses Chat Completions JSON mode |
+| `OPENAI_MODEL`, `OPENAI_BASE_URL`, `OPENAI_TIMEOUT_MS` | tuning | P V | no | optional (model default `gpt-4o-mini`; base URL for Azure/compatible gateways) |
 | `GEMINI_TEXT_MODEL`, `GEMINI_VIDEO_MODEL`, `GEMINI_TIMEOUT_MS`, `GEMINI_THINKING_LEVEL` | tuning | P V | no | optional |
 | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | console.anthropic.com | P V | yes | REQUIRED when the provider is Anthropic (`LLM_PROVIDER=anthropic`). If both keys are set and `LLM_PROVIDER` is empty, Anthropic wins |
 | `LLM_RPM_LIMIT`, `LLM_MAX_CONCURRENCY`, `LLM_MAX_RETRIES`, `LLM_CACHE_TTL_SECONDS`, `LLM_MAX_INPUT_CHARS`, `LLM_QUEUE_TIMEOUT_MS`, `VERIFIER_CONFIDENCE_THRESHOLD` | tuning | P V | no | optional |
