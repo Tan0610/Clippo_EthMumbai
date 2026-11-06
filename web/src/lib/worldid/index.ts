@@ -79,12 +79,24 @@ export function toVerifyBody(p: WorldIdProof, action: string) {
   };
 }
 
+/* Identifiers we recognise on a response: IDKit 4 `proof_of_human`, and the legacy Orb/device equivalents.
+   UNVERIFIED: the exact identifier a proofOfHuman() preset result returns has not been observed live; confirm it on the
+   first live run. Unknown identifiers are therefore NON-FATAL (the Developer Portal verify call remains the authority);
+   they are only reported via `unknownIdentifiers` so the first live run can log them. */
+export const ACCEPTED_IDENTIFIERS = ["proof_of_human", "orb", "device", "secure_document", "document"];
+export function unknownIdentifiers(p: WorldIdProof): string[] {
+  if (!isIdkitResult(p)) return [];
+  return p.responses.map((r) => r.identifier).filter((i) => typeof i === "string" && !ACCEPTED_IDENTIFIERS.includes(i));
+}
+
 /** Real verifier: World Developer Portal v4 (IDKit 4.x / World ID 4.0 + legacy 3.0 proofs). */
 export class RealWorldId implements WorldIdVerifier {
   readonly mode = "real" as const;
   async verify(proof: WorldIdProof, action: string, signal?: string): Promise<WorldIdResult> {
     const { rpId } = worldIdConfig();
     const body = toVerifyBody(proof, action);
+    const unknown = unknownIdentifiers(proof);
+    if (unknown.length) console.warn(`[worldid] unrecognised credential identifier(s): ${unknown.join(", ")} (forwarding to verify anyway)`);
     if (isIdkitResult(proof) && proof.action && proof.action !== action) return { ok: false, reason: "World ID proof was made for a different action" };
     if (isIdkitResult(proof) && proof.environment && proof.environment !== expectedEnv()) return { ok: false, reason: "World ID proof is from the wrong environment" };
     if (signal !== undefined) {
