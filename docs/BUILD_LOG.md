@@ -45,7 +45,17 @@ Track status at the start:
 
 ## Log
 
-### 16. Deploy sheet for real Arc and two helper wallets, commit pending
+### 17. Contracts deployed on real Arc testnet (simulation mode), commit pending
+
+- **What:** the owner ran `bash scripts/arc-deploy.sh` with the admin wallet. Result, read back from the chain by Claude:
+  - ClippoEscrow `0x1e05373c199D764f7dE0353d58AFEa2b4C6326Ef` (creation tx `0xc65b42e4998cc93d4d9bb2a363d53acf11129329fd5426feaaeb004f9de5ba03`), deploy block 71094327.
+  - ClippoReportReceiver `0x6b0f6C0f324C615Add6BfcA5EE0b8eeD66F2C0cd` (creation tx `0x4d1369931084c290dc49b92f1231672f6106668815a8c109ebdd04a85b02e522`).
+  - Escrow `reportAdapter` is the receiver; the receiver's escrow is the escrow; forwarder is Arc's Chainlink simulation forwarder `0x6E9E...eDc1`; expected workflow owner is the simulation wallet `0x7149...01F6`; `workflowCheckSkipped` is true and `configLocked` is false (simulation mode on purpose).
+  - Escrow owner is the admin `0x8CF9113b19Aa9D169365CA7B1BB9d7b957B460e5`; `humanAttestor` is `0x62Ed...5074`; campaign count is 1 (id 1: PerView, $10 per 1,000 views, 5 USDC pool, created and approved by the script); the creator wallet `0x8CF9...60e5` is registered as a human (attestor-signed stand-in for the World check).
+  - `cre/workflows/clippo-settlement/config.production.json` now has the real receiver address.
+- **Not proven:** no CRE report has been sent to this escrow yet: the simulation wallet had a balance of 0 when checked, so the run waits for the owner to fund it. The campaign's on-chain state was not decoded (the script ended with "campaign id 1 approved"). The web app and Vercel still point at the old escrow.
+
+### 16. Deploy sheet for real Arc and two helper wallets, commit `1e9003c`
 
 - **What:** wrote `docs/CRE_DEPLOY.md` and two scripts: `cre/scripts/arc-deploy.sh` (the owner runs it; asks for the admin key hidden; deploys escrow and receiver in simulation mode, creates and approves one 5 USDC PerView campaign, registers the creator wallet as a human via the attestor signature, writes addresses to the git-ignored `scripts/.arc-deploy.env` and the receiver into `config.production.json`) and `cre/scripts/simulate-arc-real.sh` (CRE `--broadcast` on real Arc reading the real YouTube video). The CRE project's production RPC now uses `rpc.testnet.arc.io`.
 - **Decisions (owner, today):** helper keys generated locally; the owner runs the deploy with their own wallet; the creator is registered by an attestor-signed script (stands in for the World check in the CRE demo, to be said plainly); admin wallet = `0x8CF9113b19Aa9D169365CA7B1BB9d7b957B460e5`.
@@ -197,7 +207,7 @@ Track status at the start:
 
 ## Waiting on you
 
-00. Deploy on Arc: fund `0x8CF9…60e5` (at least 6 USDC plus gas) and `0x7149…01F6` (a little gas) at https://faucet.circle.com, then run `bash scripts/arc-deploy.sh` in `.worktrees/cre/cre` and tell Claude "deployed" (see `docs/CRE_DEPLOY.md`).
+00. Fund the CRE simulation wallet `0x7149dCB8f568794c7bed1a3Bd90A6f397EeF01F6` with a little USDC at https://faucet.circle.com (its balance was 0), then tell Claude. The contracts are already deployed (log entry 17).
 0. CRE: run `cre account access` and report the result; put a YouTube Data API key only in `cre/.env` and Vercel; confirm that existing channels must re-verify with a wallet-bound code.
 1. **Clippo backend wallet:** create a new wallet, fund it with testnet USDC, and send me only its address. The address is fixed at deploy. The private key goes in Vercel as `HUMAN_ATTESTOR_PRIVATE_KEY`.
 2. **Arc Studio:** `npm i -g @circle-fin/arc-studio-cli`, then `arc-studio login`.

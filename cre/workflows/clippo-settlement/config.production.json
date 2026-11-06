@@ -9,7 +9,7 @@
   "evm": {
     "chainSelectorName": "arc-testnet",
     "isTestnet": true,
-    "receiverAddress": "0x0000000000000000000000000000000000000000",
+    "receiverAddress": "0x6b0f6C0f324C615Add6BfcA5EE0b8eeD66F2C0cd",
     "gasLimit": "3000000"
   }
 }
