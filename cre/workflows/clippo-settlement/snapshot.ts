@@ -16,13 +16,19 @@ const isUint = (v: unknown): boolean =>
  * keep the highest cumulativeViews. Invalid rows are dropped.
  */
 export function normalizeSnapshot(raw: unknown): string {
+  return normalizeSnapshotWithStats(raw).json;
+}
+
+/** Same as normalizeSnapshot but also reports how many raw rows were dropped as invalid (duplicates are not counted). */
+export function normalizeSnapshotWithStats(raw: unknown): { json: string; dropped: number } {
   if (!Array.isArray(raw)) throw new Error("snapshot is not an array");
   const best = new Map<string, SnapshotRow>();
+  let dropped = 0;
   for (const r of raw) {
-    if (!r || typeof r !== "object") continue;
+    if (!r || typeof r !== "object") { dropped++; continue; }
     const { campaignId, creator, cumulativeViews } = r as Record<string, unknown>;
-    if (!isUint(campaignId) || !isUint(cumulativeViews)) continue;
-    if (typeof creator !== "string" || !isAddress(creator, { strict: false })) continue;
+    if (!isUint(campaignId) || !isUint(cumulativeViews)) { dropped++; continue; }
+    if (typeof creator !== "string" || !isAddress(creator, { strict: false })) { dropped++; continue; }
     const row: SnapshotRow = {
       campaignId: BigInt(campaignId as string | number).toString(),
       creator: getAddress(creator),
@@ -35,9 +41,12 @@ export function normalizeSnapshot(raw: unknown): string {
   const rows = [...best.values()].sort((a, b) => {
     const d = BigInt(a.campaignId) - BigInt(b.campaignId);
     if (d !== 0n) return d < 0n ? -1 : 1;
-    return a.creator.localeCompare(b.creator);
+    // Ordinal (locale-independent) comparison on lowercased addresses: deterministic on every node.
+    const x = a.creator.toLowerCase();
+    const y = b.creator.toLowerCase();
+    return x < y ? -1 : x > y ? 1 : 0;
   });
-  return JSON.stringify(rows);
+  return { json: JSON.stringify(rows), dropped };
 }
 
 /** ABI-encode as (uint256 campaignId, address creator, uint256 cumulativeViews)[] — matches ClippoReportReceiver.onReport. */

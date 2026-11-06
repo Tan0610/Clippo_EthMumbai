@@ -1,35 +1,25 @@
 # World, Best Use of IDKit (sign-up verification)
 
-Scope: creator sign-up proof of human with IDKit. The agent split approval now uses the OIDC step-up at `auth.world.org` (Agent Pass track, `docs/TRACKS.md`). IDKit is still used for a person's own ("Build it myself") split approval and for campaign approval (`clippo-approve-split`, `clippo-approve-campaign`).
+Scope: creator sign-up proof of human. The split-release gate belongs to the Agent Pass track (`WORLD_AGENT_PASS.md`); IDKit also still gates human-built splits when `WORLD_AUTH_POLICY=either`.
 
-## Status in one place (read this first)
-
-- **Credential used:** the sign-up check asks for an Orb credential (`orbLegacy` preset, with `allow_legacy_proofs`). `NEXT_PUBLIC_WORLD_LEVEL=device` switches the build to `deviceLegacy`. Default is Orb. No `signal` is bound at sign-up (`WorldCheck.tsx`, `IDKitSheet.tsx`).
-- **No real proof has run.** No QR has been scanned with the simulator or a World app, and no proof from the Developer Portal has been accepted by this code. The only runs so far are the setup checks in `docs/WORLD_SETUP_CHECK.md` (signed request, portal answers 400 on an empty proof) and unit/integration tests with a fake verifier or a stubbed `fetch`. The prize's World ID proofs are mocked fake identities, not production identities.
-- **The contract does not verify a World ID proof.** `ClippoEscrow.registerHuman(wallet, proof)` checks an EIP-712 signature from `humanAttestor` (Clippo's backend key), then links one wallet to one `human` hash (`keccak256("clippo:human:v1|<nullifier>")`). A human can link one wallet and a wallet one human. Only linked wallets can be credited (`NotHuman` in `reportViews` and `_creditSplit`). The chain trusts the backend key to sign only after a real check. The escrow with this rule (commit `498f649`) is **not deployed**; the live site still points at an older escrow without it.
-- **Scope of "one human":** the nullifier is per (person, app, action). It stops a second Clippo account and a second linked wallet for the same sign-up action. It does not ban a person across other apps, and the code has no ban list that follows a person.
-
-## Prize requirements: what exists and what is open
-
-Prize: "Best Use of IDKit", $2,500, up to 2 teams at $1,250 each (https://ethglobal.com/events/mumbai/prizes, read 2026-11-06). A Continuity-only twin has the same text and amount. Whether Clippo qualifies for the Continuity twin is not checked. The page lists five qualification requirements: (1) integrate IDKit in a working app or flow, (2) use at least one supported World ID credential and verify it on the server or onchain, (3) explain the product event that needs trust and why the chosen credential is the minimum sufficient assurance, (4) show a successful verification and one meaningful alternative path, (5) a short integration debrief. Items 1 and 2 exist in code but have not run with a real proof. Items 3 and 5 are open. Item 4 is open as a recording. The page's wording on the credential: it rewards the best-fitting credential, not the most credentials.
-
-| Item | Status |
-| --- | --- |
-| Trust moment | Exists in code: creator sign-up gates channel proof, deals, submissions and claims (403 `NOT_VERIFIED`), and the escrow only credits linked wallets. Not shown to a judge yet: no real run, no recording. |
-| Credential rationale | **Open.** Not written. Draft to write: Orb (unique person) because one person must mean one creator account and one payout wallet. It must also argue why Orb is the minimum sufficient credential (the prize page's requirement 3), for example against Passport/NFC or Selfie Check. |
-| Successful path | Exists in code and tests with fake proofs. **Open:** a real run with a staging or sandbox app. |
-| One alternative path | Exists in code: cancelled, expired, reused proof (409 `ALREADY_USED`), not configured, each leaves the account unverified. Credential-free `npm run e2e:world` covers the gating 403s, the not-configured sheet, and stubbed backend refusals. **Open:** capturing the cancel/expire/reuse paths with the real widget. |
-| Debrief | **Open.** No IDKit debrief file exists. The template in `docs/TRACKS.md` is for Agent Pass. |
+STATUS (2026-11-06): the widget and server verify are wired in code. DONE 2026-11-06: Developer Portal app 'Clippo' created, relying party registered (RP id and signer address shown), and actions `clippo-creator-signup`, `clippo-approve-split`, `clippo-approve-campaign` created; app id, RP id and signing key are in `web/.env.local`. No verification (proof) run has happened yet. Items marked TODO / FILL AFTER LIVE RUN need credentials and a real or sandbox World ID.
 
 ## Research notes (docs.world.org, read 2026-10-28)
 
 - IDKit 4.x flow: backend signs an RP request (`signRequest`, never client side) giving `sig, nonce, created_at, expires_at`; client builds `rp_context {rp_id, nonce, created_at, expires_at, signature}` and renders `IDKitRequestWidget` with `app_id, action, environment, preset, allow_legacy_proofs`; backend forwards the IDKit result unmodified to `POST https://developer.world.org/api/v4/verify/{rp_id}` and accepts only `success === true` with matching `environment`.
 - Environments for the request/verify body: `production` (default), `staging`, `sandbox`. The integrate page mentions the staging simulator (simulator.worldcoin.org); the Sandbox page says use `environment: sandbox` with the World ID (Sandbox) app (access requested in the Developer Portal; TestFlight / Play testing) and still post to the production verify endpoint.
 - Nullifier: unique per (user, app/RP, action). Store it, reject reuse for the same action (docs suggest `NUMERIC(78,0)`). Docs recommend `handleVerify` so a backend refusal puts the widget in error (`failed_by_host_app`).
-- Presets: `orbLegacy`, `proofOfHuman` documented; we use `orbLegacy` / `deviceLegacy` from the installed package with `allow_legacy_proofs`.
+- Presets: `orbLegacy`, `proofOfHuman` documented. Clippo now uses `proofOfHuman({ signal })` (`components/IDKitSheet.tsx`), with `allow_legacy_proofs` on because the preset includes a legacy Orb fallback. The exact `identifier` string in a live result is not confirmed: TODO.
 - Error codes (28) documented at /world-id/idkit/error-codes, incl. `user_rejected`, `max_verifications_reached`, `nullifier_replayed`, `rp_signature_expired`, `timeout`, `connection_failed`, `failed_by_host_app`.
 - On-chain: v4 `WorldIDVerifier.verify(nullifier, action, rpId, nonce, signalHash, expiresAtMin, issuerSchemaId, credentialGenesisIssuedAtMin, uint256[5] proof)`; action = `keccak256(action) >> 8`. World Chain prod `0x00000000009E00F9FE82CfeeBB4556686da094d7`, staging `0x703a6316c975DEabF30b637c155edD53e24657DB`, **Arc prod (WorldIDSatellite) `0x304E14e4dC0508C0927e3b307a2C18422C07E394`**. Store nullifier in a mapping only after verify succeeds.
-- Prize page: readable at https://ethglobal.com/events/mumbai/prizes (fetched 2026-11-06; the old `mumbai2026` paths return 404). Requirements are listed above. Server or onchain verification is accepted, so no on-chain deployment is required. The earlier Cannes 2026 analogue is no longer needed. Re-read the page before submission in case it changes.
+- Prize page (verified live): https://ethglobal.com/events/mumbai/prizes/world . "Best Use of IDKit", $2,500 (up to 2 teams x $1,250). Requirements: integrate IDKit in a functioning app; at least one supported credential (Proof of Human, Passport/NFC, Selfie Check) verified on a server or onchain; explain the specific product trust event and why the credential is the minimum sufficient assurance; show a successful verification and one meaningful alternative path (cancel, unavailable credential, rejection, ineligible user); a short debrief with four items (time to first success, friction encountered, missing capability or documentation, the one improvement with greatest impact). Proofs use fake identities, not for production. Duplicate continuity-only prizes exist; the two open ones are this and World ID Agent Pass (`WORLD_AGENT_PASS.md`).
+
+## Developer Portal setup, as observed 2026-11-06 (differs from the docs)
+
+- No 'Enable World ID 4.0' banner. Flow: create app (dialog has only 'App name'; no external / mini-app type choice) -> 'World ID Configuration' tab (App ID, 'RP ID: Not registered') -> 'Register relying party' -> 'Generate new key' dialog (private key, 'Download key file (.json)', 'I have saved my private key securely') -> Continue -> after about 8 seconds the RP ID (`rp_...`) and signer address appear, with 'Rotate signer key', 'Switch to self-managed', 'Delete app'.
+- Actions are created from the Dashboard tab's actions list ('Create action'). The dialog has only 'Identifier' (lowercase letters, numbers, dashes, max 32 chars) and 'Short description'. There is no max-verifications / uniqueness setting, so portal defaults apply.
+- Open question (TODO): whether the default action settings allow repeat verifications for `clippo-approve-split` and `clippo-approve-campaign`. Test with a second approval; if it is refused, record it here and in the debrief.
+- Developer Portal login: Auth0 passwordless email code, or 'Continue with World'. No Google.
 
 ## Requirement checklist
 
@@ -37,15 +27,26 @@ Prize: "Best Use of IDKit", $2,500, up to 2 teams at $1,250 each (https://ethglo
 | --- | --- | --- |
 | Official IDKit 4.x integration (`@worldcoin/idkit` ^4.6) | PRD 6.2, docs | Done: `IDKitSheet.tsx` uses `IDKitRequestWidget` |
 | RP context signed on the backend, key server-only | docs integrate | Done: `/api/worldid/rp-signature`, `createRpContext` |
-| Proof validated server-side via `/api/v4/verify/{rp_id}`, `success` + environment checked | prize page req. 2, docs | Done in code (stubbed `fetch` in `web/src/lib/backend.integration.test.ts`); not run against a live portal with a real proof |
-| Result forwarded unmodified; action/environment mismatch refused | docs verify API | Done: `RealWorldId`; refusals tested in `backend.integration.test.ts` |
+| Proof validated server-side via `/api/v4/verify/{rp_id}`, `success` + environment checked | docs, Cannes analogue | Done in code (mocked fetch in tests); not run against a live portal |
+| Result forwarded unmodified; action/environment mismatch refused | docs verify API | Done: `RealWorldId`, tests |
 | Account marked verified only after backend validation | PRD 6.2 | Done: `completeSignup` |
 | One person one account: nullifier unique | PRD 6.2, docs nullifier | Done: `User.worldIdNullifier @unique`, normalised, P2002 race handled, 409 `ALREADY_USED`; swap on a verified account refused (`ACCOUNT_ALREADY_VERIFIED`) |
-| World ID is a real constraint (gates features) | PRD 6.2, prize page "real trust moment" | Done: 403 `NOT_VERIFIED` on channel create/verify, deals, submissions, claim |
+| World ID is a real constraint (gates features) | Cannes analogue | Done: 403 `NOT_VERIFIED` on channel create/verify, deals, submissions, claim |
 | Failure paths: cancelled, expired, already used, not configured leave action undone | PRD 6.2 | Done in UI text + backend; real widget error mapping in `IDKitSheet` |
-| On-chain verification | docs (optional: the prize page accepts server or onchain) | Optional path built (`lib/worldid/onchain.ts`, env `WORLD_ID_ONCHAIN_VERIFIER`, `WORLD_ID_ONCHAIN_RPC_URL`), off unless both are set; arg mapping tested in `signup.integration.test.ts`; ABI types, rp id numeric form and the contract addresses above (copied from the docs) are unverified on a live contract. The escrow's `registerHuman` is a different, always-on rule: it checks the backend's signature, not a World ID proof (see above) |
-| Escrow links wallet to human, only linked wallets are credited | commit `498f649` | Done in Solidity (`registerHuman`, `NotHuman`; Foundry tests exist, not re-run for this doc); backend calls it from `/api/worldid/verify` and a failure there is reported as `onchain.linked: false` but does not undo the DB verification. **Not deployed, not run on Arc.** |
+| On-chain verification | docs (optional per analogue) | Optional path built (`lib/worldid/onchain.ts`, env `WORLD_ID_ONCHAIN_VERIFIER`, `WORLD_ID_ONCHAIN_RPC_URL`); arg mapping unit tested; ABI types and rp id numeric form unverified on a live contract |
 | Verified-human badge | PRD | Done: `VerifiedMark` in Join and Account |
-| Real run with staging/sandbox app and screenshots | judges | **Not done.** No real proof has run; needs a simulator or Sandbox app scan |
-| Short integration debrief | PRD 6.2 | **Open.** No IDKit debrief written. `docs/TRACKS.md` has a template for Agent Pass only; write an IDKit one after the real run |
+| Real run with staging/sandbox app and screenshots | judges | PARTLY: app, RP and three actions created 2026-11-06; the proof run itself is TODO FILL AFTER LIVE RUN |
+| Short debrief, four items | Prize page | Draft with live fields blank: `docs/tracks/world-idkit-debrief.md`. FILL AFTER LIVE RUN |
+| Trust event and minimum-sufficient credential explained | Prize page | Done below ("Trust event and credential rationale"); keep in the video |
+| One meaningful alternative path shown | Prize page | Scripted in `world-idkit-demo.md` (cancel, credential unavailable / viewer-only, second account `ALREADY_USED`). The viewer-only state exists in code (`CredentialUnavailable` in `JoinView`/`AccountView`, triggered by the IDKit error code `credential_unavailable`); its only action is a link to `/wire` (browse as a viewer). It creates no account state and unlocks nothing. Whether World really returns that code is unverified. TODO: recorded run |
+| Supported credential verified server-side | Prize page | Proof of Human via `proofOfHuman`, server verify in code. TODO: live run |
 | Use `handleVerify` so backend refusal shows inside the widget | docs react | Not adopted; we verify after `onSuccess` and show our own message |
+
+## Trust event and credential rationale
+
+- Trust event: a creator account sign-up. A verified account unlocks channels, deals, submissions and claims, which is where USDC is paid out.
+- Risk: sybil payout farming (one person creating many accounts to collect many payouts).
+- Why Proof of Human: it is the minimum credential that gives per-human uniqueness. The nullifier is unique per (human, app, action), so a second account by the same human is refused (409 `ALREADY_USED`).
+- Why not Selfie Check: it shows a live person is present but does not give uniqueness across the whole population, so it does not stop one person opening many accounts.
+- Why not Passport/NFC: it proves an attribute of a document (a real, valid passport), which Clippo does not need; it is not the property we are defending.
+- Honest limits: not run live yet; whether a given credential is available to a given user is decided by World, and our UI shows the "credential unavailable / viewer-only" path (message plus a link to `/wire`; nothing is unlocked). TODO verify live that World reports this code.

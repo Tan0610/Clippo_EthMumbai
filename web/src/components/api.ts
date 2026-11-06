@@ -465,12 +465,77 @@ export const agentPass = {
   /** A check that ended in the widget (cancelled / expired / failed): log it. Best effort, never blocks the UI. */
   reportCheck: (campaignId: string, kind: "CANCELLED" | "EXPIRED" | "FAILED", proposalId?: string, splitHash?: string, message?: string) =>
     req(`/campaigns/${campaignId}/split/audit`, { json: { kind, proposalId, splitHash, message } }).catch(() => null),
+  /**
+   * Release an AGENT-PROPOSED split after a World ID step-up. Sends the stepUpAttemptId, never a worldIdProof (the server answers
+   * 428 STEPUP_REQUIRED to an IDKit proof on an agent proposal). The server re-validates the attempt: AUTHORIZED, unexpired, bound to
+   * this split hash and this user, single use. Returns the same shape as the IDKit split approval (incl. the on-chain args).
+   * Human-built splits keep the proof path (lib/chain/client.ts approveSplit, worldIdProof); send exactly one of the two.
+   */
+  releaseWithStepUp: (campaignId: string, splits: { creatorWallet: string; amount: number }[], agentProposalId: string | undefined, stepUpAttemptId: string) =>
+    DEMO && stepUpAttemptId.startsWith(DEMO_ATTEMPT)
+      ? pause(600).then(() => demoRelease())
+      : withFallback(
+          () => req<ApiSplitRelease>(`/campaigns/${campaignId}/split`, { json: { splits, ...(agentProposalId ? { agentProposalId } : {}), stepUpAttemptId } }),
+          () => demoRelease(),
+        ),
 };
 
 /** A creator channel. `verificationCode` is `clippo:<wallet lowercase>`; `needsReverify` marks channels still on the old code format. */
 export type ChannelRec = { id: string; platform: string; handle: string; verified: boolean; verificationCode?: string; needsReverify?: boolean };
 /** The channel code shown in demo mode only (same shape as the real one, built from the demo creator wallet). */
 const DEMO_CODE = `clippo:${DEMO_WALLETS.CREATOR.toLowerCase()}`;
+
+/* ---------- World ID step-up (auth.world.org OIDC): full-page redirect, so the UI resumes from a server-side attempt ---------- */
+export type StepUpOperation = "SPLIT_RELEASE";
+export type ApiStepUpStart = { attemptId: string; authorizeUrl: string; expiresAt: string };
+export type ApiStepUpAttempt = {
+  /** Only AUTHORIZED authorizes anything. Other values (PENDING, DENIED, EXPIRED, FAILED, CONSUMED...) are shown, never acted on. */
+  status: string;
+  failureCode: string | null;
+  operation: StepUpOperation;
+  campaignId: string;
+  splitHash: string;
+  splits: { creatorWallet: string; amount: number }[];
+  agentProposalId: string | null;
+  authorizedUntil: string | null;
+};
+export type ApiSplitRelease = {
+  proposal: SplitProposal;
+  attestation: `0x${string}` | string;
+  onchain: { functionName: "approveSplit"; args: { id: string; creators: `0x${string}`[]; amounts: string[]; proof: { human: `0x${string}`; expiresAt: string; signature: `0x${string}` } } } | null;
+};
+
+const DEMO_ATTEMPT = "demo-";
+const demoKey = (id: string) => `clippo.demoStepUp.${id}`;
+const demoRelease = (): ApiSplitRelease => ({ proposal: { id: "demo", status: "PENDING", splitHash: "0xdemo", approvals: { campaigner: true, admin: false }, awaiting: ["admin"] }, attestation: "0xdemo", onchain: null });
+
+export const stepUp = {
+  /** Start a step-up. The caller then does window.location.assign(authorizeUrl). In a NEXT_PUBLIC_DEMO=1 build with no service, the "redirect" is local (demo attempt kept in sessionStorage, no auth.world.org). */
+  start: (campaignId: string, body: { operation: StepUpOperation; splits: { creatorWallet: string; amount: number }[]; agentProposalId?: string; returnPath?: string }) =>
+    withFallback(
+      () => req<ApiStepUpStart>(`/campaigns/${campaignId}/stepup/start`, { json: body }),
+      (): ApiStepUpStart => {
+        const attemptId = `${DEMO_ATTEMPT}${Math.random().toString(36).slice(2, 10)}`;
+        const a: ApiStepUpAttempt = { status: "AUTHORIZED", failureCode: null, operation: body.operation, campaignId, splitHash: "0xdemo", splits: body.splits, agentProposalId: body.agentProposalId ?? null, authorizedUntil: new Date(Date.now() + 300_000).toISOString() };
+        try { sessionStorage.setItem(demoKey(attemptId), JSON.stringify(a)); } catch { /* demo only */ }
+        const path = body.returnPath ?? "/";
+        return { attemptId, authorizeUrl: `${path}${path.includes("?") ? "&" : "?"}stepup=approved&attempt=${attemptId}`, expiresAt: new Date(Date.now() + 300_000).toISOString() };
+      },
+    ),
+  /** The server-side attempt (owner only). This, not the redirect query string, is what says whether the step-up passed. */
+  get: (attemptId: string): Promise<ApiStepUpAttempt> => {
+    if (DEMO && attemptId.startsWith(DEMO_ATTEMPT)) {
+      try {
+        const raw = sessionStorage.getItem(demoKey(attemptId));
+        if (raw) return Promise.resolve(JSON.parse(raw) as ApiStepUpAttempt);
+      } catch { /* fall through */ }
+      return Promise.reject(new ApiError(404, "NOT_FOUND", "Demo step-up attempt not found."));
+    }
+    return withFallback(() => req<ApiStepUpAttempt>(`/stepup/${encodeURIComponent(attemptId)}`), () => { throw new ApiError(404, "NOT_FOUND", "Step-up attempt not found."); });
+  },
+};
+export const startStepUp = stepUp.start;
+export const getStepUpAttempt = stepUp.get;
 
 export const actions = {
   suggest: (body: { idea: string; contentSource?: string; platforms?: string[]; payoutMode?: string; poolShareBasis?: string; approver?: string; eligibility?: string }) =>

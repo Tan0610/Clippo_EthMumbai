@@ -27,7 +27,7 @@ Project root directory on Vercel: `web`. Scopes: **P** = Production, **V** = Pre
 | `DATABASE_URL` | Neon dashboard: **pooled** connection string (host has `-pooler`) | P V | yes | REQUIRED | Append `?sslmode=require&pgbouncer=true&connection_limit=5&connect_timeout=15`. Use a separate Neon branch for Preview. |
 | `DIRECT_URL` | Neon: **non-pooled** string | local only (not needed at runtime) | yes | for migrations | Used by `npm run db:migrate:direct`, never at build. Do not add to Vercel unless you run migrations from CI. |
 | `SESSION_SECRET` | `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"` | P V | yes | REQUIRED | >= 32 chars or the app refuses to sign sessions in production. Also keys OAuth-token encryption: rotating it signs everyone out and invalidates stored Instagram tokens. Use different values for P and V. |
-| `CRON_SECRET` | `openssl rand -hex 32` (or the node one-liner above) | P V | yes | REQUIRED | Vercel Cron sends it as `Authorization: Bearer`. Without it every cron endpoint answers 401 (indexer and snapshots never run). Also accepted (`x-cron-secret` or Bearer) on `POST /api/snapshots/refresh`. The CRE workflow itself only reads the public `GET /api/snapshots/daily`. >= 16 chars. |
+| `CRON_SECRET` | `openssl rand -hex 32` (or the node one-liner above) | P V | yes | REQUIRED | Vercel Cron sends it as `Authorization: Bearer`. Without it every cron endpoint answers 401 (indexer and snapshots never run). Also accepted (`x-cron-secret` or Bearer) on `POST /api/snapshots/refresh`. The CRE workflow itself only reads the public `GET /api/snapshots/clips`. >= 16 chars. |
 | `ADMIN_WALLETS` | Comma-separated lowercase 0x addresses of the team admins | P V | no | REQUIRED | They get role ADMIN at sign-in. |
 | `SIWE_DOMAIN` | Optional override | P V | no | optional | Default is the request `Host`, which is correct for production, custom domains and every preview URL. Set only when a proxy rewrites Host. If set it must equal the host the user's browser is on, so do **not** set it on Preview. |
 | `NEXT_PUBLIC_TEST_DEPLOY` | `1` | P V | no | REQUIRED for the test deploy | Shows the TESTNET banner/footer, adds `noindex` meta + `X-Robots-Tag`, `robots.txt` Disallow all. Build-time. |
@@ -40,17 +40,19 @@ Project root directory on Vercel: `web`. Scopes: **P** = Production, **V** = Pre
 | `ARC_RPC_URL` | Arc docs (`https://rpc.testnet.arc.io`; `rpc.testnet.arc.network` also answers) | P V | no | optional (server default is `https://rpc.testnet.arc.io`) |
 | `ARC_CHAIN_ID` | `5042002` | P V | no | optional |
 | `USDC_ADDRESS` | `0x3600000000000000000000000000000000000000` | P V | no | optional |
-| `ESCROW_ADDRESS` | Output of the contracts deploy | P V | no | REQUIRED (money endpoints answer 503 without it). The live site currently has the old-design escrow `0xd8453c22996bea11598a3dbf05112675b945c39c` here; the new enforcing escrow (498f649) is not deployed yet |
+| `ESCROW_ADDRESS` | Output of the contracts deploy | P V | no | REQUIRED (money endpoints answer 503 without it). The deployed test site https://clippo-cre.vercel.app has the enforcing escrow (498f649) `0x1e05373c199D764f7dE0353d58AFEa2b4C6326Ef` here (Arc testnet, simulation mode, receiver `0x6b0f6C0f324C615Add6BfcA5EE0b8eeD66F2C0cd`). The old clippo-six site had the old-design escrow `0xd8453c22996bea11598a3dbf05112675b945c39c`; that project is not in the owner's Vercel account |
 | `HUMAN_ATTESTOR_PRIVATE_KEY` | Fresh testnet-only key. Its address is `HUMAN_ATTESTOR_ADDRESS` at contracts deploy and is fixed in the escrow | P V | **yes** | REQUIRED with the new escrow (`/api/health` `config.clippoWallet`; not part of `ready`). Clippo's backend wallet: signs World ID approvals, links wallets, sends `claimFor`; fund it with testnet USDC for gas. This is deliberately NOT in the do-not-set list |
 | `CAMPAIGN_DEADLINE_SECONDS` | default 30 days | P V | no | optional (short value for a live demo) |
-| `ESCROW_DEPLOY_BLOCK` | Block of the escrow deploy tx | P V | no | REQUIRED in practice (indexer starts there; 0 makes the first sync crawl) |
+| `ESCROW_DEPLOY_BLOCK` | Block of the escrow deploy tx | P V | no | REQUIRED in practice (indexer starts there; 0 makes the first sync crawl). `71094327` for the escrow above |
 | `PROFILE_ADDRESS`, `REFERRAL_ADDRESS`, `REPORT_RECEIVER_ADDRESS` | contracts deploy | P V | no | only if the module is on |
 | `CIRCLE_FAUCET_URL` | `https://faucet.circle.com` | P V | no | optional |
 | `PLATFORM_CAMPAIGNER_FEE_BPS`, `PLATFORM_CREATOR_FEE_BPS`, `RETENTION_DAYS`, `HIGH_VALUE_THRESHOLD_USDC` | tuning | P V | no | optional |
 
-Client-side (inlined at build): `NEXT_PUBLIC_ARC_RPC_URL`, `NEXT_PUBLIC_ARC_CHAIN_ID`, `NEXT_PUBLIC_USDC_ADDRESS`, `NEXT_PUBLIC_FAUCET_URL` (all optional; the browser fallback defaults to `https://rpc.testnet.arc.network` and the other Arc testnet values and the wallet otherwise reads `/api/chain/config`). The escrow address reaches the browser through `/api/chain/config`, no public var is needed.
+Client-side (inlined at build): `NEXT_PUBLIC_ARC_RPC_URL`, `NEXT_PUBLIC_ARC_CHAIN_ID`, `NEXT_PUBLIC_USDC_ADDRESS`, `NEXT_PUBLIC_FAUCET_URL` (all optional; the browser fallback defaults to `https://rpc.testnet.arc.io` and the other Arc testnet values and the wallet otherwise reads `/api/chain/config`). The escrow address reaches the browser through `/api/chain/config`, no public var is needed.
 
 ## World ID (staging)
+
+Status 2026-11-06: Developer Portal app 'Clippo', RP and three actions created; `WORLD_ID_APP_ID`, `WORLD_ID_RP_ID` and `WORLD_ID_SIGNING_KEY` are set in `web/.env.local`. Adding them to Vercel is TODO.
 
 | Name | Comes from | Scope | Secret | Need |
 |---|---|---|---|---|
@@ -62,8 +64,22 @@ Client-side (inlined at build): `NEXT_PUBLIC_ARC_RPC_URL`, `NEXT_PUBLIC_ARC_CHAI
 | `NEXT_PUBLIC_WORLD_LEVEL` | `orb` (default) or `device` | P V | no | optional |
 | `WORLD_ID_ONCHAIN_VERIFIER`, `WORLD_ID_ONCHAIN_RPC_URL` | World docs | P V | no | optional |
 | `WORLD_CHAIN_RPC_URL` | World Chain RPC | P V | no | optional (AgentBook lookup; AgentKit/AgentBook is not the official Agent Pass) |
-| `WORLD_IDP_CLIENT_ID`, `WORLD_IDP_CLIENT_SECRET`, `WORLD_IDP_REDIRECT_URI` | World IdP portal (auth.world.org; sandbox at sandbox.auth.world.org). Redirect = `https://<host>/api/agentpass/stepup/callback`, HTTPS only | P V | secret: yes | REQUIRED for the agent-split step-up (routes answer 503 `NOT_CONFIGURED` without them). Not proven: never run against the real issuer or in a browser |
-| `WORLD_IDP_ISSUER`, `WORLD_IDP_TOKEN_AUTH_METHOD`, `WORLD_IDP_ACR_VALUES` | World IdP portal | P V | no | optional (issuer default `https://auth.world.org`; auth method `client_secret_basic` or `client_secret_post`; ACR default `orb` and `orb-face`) |
+
+## World auth (auth.world.org step-up, Agent Pass)
+
+Implemented in code, not yet run live. Register a client at auth.world.org (sandbox) first. BLOCKED as of 2026-11-06: the auth.world.org portals accept only an enterprise Google account (a personal Gmail got 403 `account_not_eligible`), so these variables are NOT configured and the step-up gate is off; ask a World mentor for eligibility or a pre-created sandbox client (see `WORLD_USER_TODO.md`, 'Blocker: auth.world.org access'). Demo fallback only if blocked: `WORLD_AUTH_POLICY=either` lets agent proposals be released with the IDKit proof; this is NOT the official Agent Pass integration and must be stated as such.
+
+| Name | Comes from | Scope | Secret | Need |
+|---|---|---|---|---|
+| `WORLD_AUTH_CLIENT_ID` | auth.world.org client | P V | no | REQUIRED for the step-up gate |
+| `WORLD_AUTH_CLIENT_SECRET` | auth.world.org client | P V | **yes** | REQUIRED (server-only) |
+| `WORLD_AUTH_ISSUER` | `https://sandbox.auth.world.org` for the sandbox | P V | no | optional (default `https://auth.world.org`; set the sandbox issuer for the demo) |
+| `WORLD_AUTH_REDIRECT_URI` | `https://<host>/api/auth/world/callback`; exact HTTPS URL registered with the client (localhost http is likely unsupported: use the deployed URL or an HTTPS tunnel) | P V | no | REQUIRED (one URL per host; Preview needs its own client or skip) |
+| `WORLD_AUTH_TOKEN_AUTH` | token endpoint auth method of the client | P V | no | optional (default `basic`; `post` sends `client_secret` in the form) |
+| `WORLD_AUTH_ACR` | required `acr` for step-up | P V | no | optional (default `https://world.org/oidc/acr/orb`; whether the sandbox issues it is unverified) |
+| `WORLD_AUTH_POLICY` | `agent-required` (default; agent proposals need the step-up), `either`, `required`. Unconfigured `WORLD_AUTH_*` falls back to `agent-required` | P V | no | optional |
+
+Check with `npm run doctor` (fetches `{issuer}/.well-known/openid-configuration`).
 
 ## AI
 
@@ -112,7 +128,7 @@ LLM throttle/queue/cache are per function instance (in memory). On Vercel severa
 
 ## Agent Pass
 
-`AGENT_PASS_DEMO=1` (P V, not secret, REQUIRED for the test deploy; the agent is a derived local wallet counted as a FAKE human, records are labelled demo). Leave `AGENT_PASS_PRIVATE_KEY` unset. The human gate on the agent's split is the World IdP step-up (`WORLD_IDP_*`, World ID section above).
+`AGENT_PASS_DEMO=1` (P V, not secret, REQUIRED for the test deploy; the agent is a derived local wallet counted as a FAKE human, records are labelled demo). Leave `AGENT_PASS_PRIVATE_KEY` unset. The human gate on the agent's split is the auth.world.org step-up (`WORLD_AUTH_*`, World auth section above).
 
 ## Vercel-provided (do not set)
 
@@ -120,4 +136,8 @@ LLM throttle/queue/cache are per function instance (in memory). On Vercel severa
 
 ## Minimal set for the first deploy
 
-`DATABASE_URL`, `SESSION_SECRET`, `CRON_SECRET`, `ADMIN_WALLETS`, `NEXT_PUBLIC_TEST_DEPLOY=1`, `ESCROW_ADDRESS`, `ESCROW_DEPLOY_BLOCK`, `HUMAN_ATTESTOR_PRIVATE_KEY`, `WORLD_ID_APP_ID`, `WORLD_ID_RP_ID`, `WORLD_ID_SIGNING_KEY`, `WORLD_ID_ENVIRONMENT=staging`, `GEMINI_API_KEY` (or `ANTHROPIC_API_KEY` with `LLM_PROVIDER=anthropic`), `YOUTUBE_API_KEY`, `AGENT_PASS_DEMO=1`, `STORAGE_PROVIDER=blob` + Blob store connected. Add `WORLD_IDP_CLIENT_ID`, `WORLD_IDP_CLIENT_SECRET`, `WORLD_IDP_REDIRECT_URI` to use the agent step-up.
+`DATABASE_URL`, `SESSION_SECRET`, `CRON_SECRET`, `ADMIN_WALLETS`, `NEXT_PUBLIC_TEST_DEPLOY=1`, `ESCROW_ADDRESS`, `ESCROW_DEPLOY_BLOCK`, `HUMAN_ATTESTOR_PRIVATE_KEY`, `WORLD_ID_APP_ID`, `WORLD_ID_RP_ID`, `WORLD_ID_SIGNING_KEY`, `WORLD_ID_ENVIRONMENT=staging`, `GEMINI_API_KEY` (or `ANTHROPIC_API_KEY` with `LLM_PROVIDER=anthropic`), `YOUTUBE_API_KEY`, `AGENT_PASS_DEMO=1`, `STORAGE_PROVIDER=blob` + Blob store connected. Add `WORLD_AUTH_CLIENT_ID`, `WORLD_AUTH_CLIENT_SECRET`, `WORLD_AUTH_REDIRECT_URI` to use the agent step-up.
+
+## What is set on the deployed test site (https://clippo-cre.vercel.app)
+
+Names only, from `docs/CRE_DEPLOY.md` section 6 and `docs/BUILD_LOG.md` entry 20. The project `clippo-cre` was created because the old `clippo-six` project is not in the owner's Vercel account. It was deployed with the Vercel CLI from the feature branch and will be redeployed from main after the merge. Database: Neon through the Vercel integration (`DATABASE_URL` and friends). Production variables set: `ESCROW_ADDRESS`, `ESCROW_DEPLOY_BLOCK`, `SESSION_SECRET`, `CRON_SECRET`, `HUMAN_ATTESTOR_PRIVATE_KEY`, `YOUTUBE_API_KEY`, `NEXT_PUBLIC_TEST_DEPLOY=1`. Never added: `CRE_ETH_PRIVATE_KEY`. Not configured there: the LLM key, World ID (`WORLD_ID_*`), the `WORLD_AUTH_*` step-up, `ADMIN_WALLETS` and blob storage, so `/api/health` reports `ready: false`; the CRE demo does not need them.

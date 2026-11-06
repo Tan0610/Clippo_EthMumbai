@@ -11,5 +11,12 @@
     "isTestnet": true,
     "receiverAddress": "0x6b0f6C0f324C615Add6BfcA5EE0b8eeD66F2C0cd",
     "gasLimit": "3000000"
-  }
+  },
+  "requireHttpAuthorizedKeys": true,
+  "httpAuthorizedKeys": [
+    {
+      "type": "KEY_TYPE_ECDSA_EVM",
+      "publicKey": "0x7149dCB8f568794c7bed1a3Bd90A6f397EeF01F6"
+    }
+  ]
 }

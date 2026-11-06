@@ -85,3 +85,53 @@ test("summarizeReceiverLogs reports swallowed rows, names known errors and ignor
   ]);
   assert.deepEqual(summarizeReceiverLogs([], receiver), { items: null, failed: null, failures: [] });
 });
+
+import { configSchema, httpTriggerConfig } from "./config.ts";
+import { normalizeSnapshotWithStats } from "./snapshot.ts";
+
+const baseCfg = () => ({
+  schedule: "0 30 0 * * *",
+  backendUrl: "http://127.0.0.1:8787",
+  manifestPath: "/api/snapshots/clips",
+  youtubeApiBase: "http://127.0.0.1:8787/youtube/v3",
+  maxStalenessDays: 2,
+  maxRowsPerReport: 25,
+  evm: { chainSelectorName: "arc-testnet", isTestnet: true, receiverAddress: "0xd7842e13512a45cd6a36def823b316befa75f033", gasLimit: "3000000" },
+});
+
+test("config: the checked-in staging and production configs parse", () => {
+  const load = (f: string) => JSON.parse(readFileSync(new URL(`./${f}`, import.meta.url), "utf8"));
+  assert.ok(configSchema.safeParse(load("config.staging.json")).success);
+  assert.ok(configSchema.safeParse(load("config.production.json")).success);
+});
+
+test("config: requireHttpAuthorizedKeys fails fast without keys", () => {
+  assert.deepEqual(httpTriggerConfig(configSchema.parse(baseCfg())), {});
+  assert.throws(() => httpTriggerConfig(configSchema.parse({ ...baseCfg(), requireHttpAuthorizedKeys: true })), /httpAuthorizedKeys is required/);
+  const keyed = configSchema.parse({
+    ...baseCfg(),
+    requireHttpAuthorizedKeys: true,
+    httpAuthorizedKeys: [{ type: "KEY_TYPE_ECDSA_EVM", publicKey: "0xd7842e13512a45cd6a36def823b316befa75f033" }],
+  });
+  assert.equal(httpTriggerConfig(keyed).authorizedKeys?.length, 1);
+});
+
+test("normalizeSnapshotWithStats counts dropped rows", () => {
+  const good = fx.backendFeed[0];
+  const { json, dropped } = normalizeSnapshotWithStats([good, null, "x", { campaignId: "cmabc", creator: good.creator, cumulativeViews: 1 }, { campaignId: "1", creator: "nope", cumulativeViews: 1 }]);
+  assert.equal(JSON.parse(json).length, 1);
+  assert.equal(dropped, 4);
+});
+
+test("ordering is deterministic: campaignId numeric, then ordinal lowercase creator", () => {
+  const a = "0xBBbbBBbbBBbbBBbbBBbbBBbbBBbbBBbbBBbbBBbb";
+  const b = "0xaaaaAAAAaaaaAAAAaaaaAAAAaaaaAAAAaaaaAAAA";
+  const rows = [
+    { campaignId: "10", creator: a, cumulativeViews: 1 },
+    { campaignId: "9", creator: a, cumulativeViews: 1 },
+    { campaignId: "9", creator: b, cumulativeViews: 1 },
+  ];
+  const out = JSON.parse(normalizeSnapshot(rows)).map((r: { campaignId: string; creator: string }) => r.campaignId + ":" + r.creator.toLowerCase().slice(2, 4));
+  assert.deepEqual(out, ["9:aa", "9:bb", "10:bb"]);
+  assert.equal(normalizeSnapshot([...rows].reverse()), normalizeSnapshot(rows));
+});

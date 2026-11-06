@@ -7,7 +7,7 @@ export PATH="$HOME/.foundry/bin:$HOME/.cre/bin:$HOME/.bun/bin:$PATH"
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 RPC=http://127.0.0.1:8545
 if cast block-number --rpc-url "$RPC" >/dev/null 2>&1; then echo "something already listens on $RPC; stop it first" >&2; exit 1; fi
-anvil --fork-url "${ARC_RPC:-https://rpc.testnet.arc.network}" --port 8545 --chain-id 5042002 >/dev/null 2>&1 &
+anvil --fork-url "${ARC_RPC:-https://rpc.testnet.arc.io}" --port 8545 --chain-id 5042002 >/dev/null 2>&1 &
 ANVIL=$!; MOCK=; trap 'kill $ANVIL $MOCK 2>/dev/null || true' EXIT
 until cast block-number --rpc-url "$RPC" >/dev/null 2>&1; do sleep 1; done
 bash scripts/local-chain.sh >&2             # deploys MockUSDC/escrow/receiver, links creators, patches config.staging.json receiverAddress

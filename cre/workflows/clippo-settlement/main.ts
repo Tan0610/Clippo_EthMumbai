@@ -19,7 +19,7 @@ import {
 } from "@chainlink/cre-sdk";
 import { EVM_PB } from "@chainlink/cre-sdk/pb";
 import { keccak256, stringToHex } from "viem";
-import { z } from "zod";
+import { configSchema, httpTriggerConfig, type Config } from "./config";
 import { assertFresh, assertReceiverConfigured, chunkRows, encodeReport, summarizeReceiverLogs, type ReportOutcome, type SnapshotRow } from "./snapshot";
 import {
   batches,
@@ -40,32 +40,7 @@ import {
 // Name of the CRE secret (cre/secrets.yaml maps it to the env var YOUTUBE_API_KEY_CRE for simulation).
 const YOUTUBE_SECRET_ID = "YOUTUBE_API_KEY";
 
-const configSchema = z.object({
-  // 6-field cron (seconds first). Daily at 00:30 UTC by default (after the backend freeze job).
-  schedule: z.string(),
-  // Clippo backend base URL; the workflow calls GET {backendUrl}{manifestPath}[?day=YYYY-MM-DD]
-  // Regex, not z.string().url(): that relies on the URL global, which throws "Invalid url" in the CRE wasm runtime.
-  backendUrl: z.string().regex(/^https?:\/\/[^\s/?#]+(\/\S*)?$/, "backendUrl must be an http(s) URL"),
-  // Clip manifest: GET {backendUrl}{manifestPath}?day=YYYY-MM-DD -> { day, hash, clips: [{ campaignId, creator, videoId, channelId }] }. Default /api/snapshots/clips.
-  manifestPath: z.string(),
-  // YouTube Data API v3 base URL (the staging config points at the local mock). The API key is a CRE secret, sent in a header.
-  youtubeApiBase: z.string().regex(/^https?:\/\/[^\s/?#]+(\/\S*)?$/, "youtubeApiBase must be an http(s) URL"),
-  // Legacy frozen feed path: only scripts/emulate-delivery.mts reads it; the workflow itself no longer does.
-  feedPath: z.string().optional(),
-  // Reject a manifest whose day is older than this many UTC days (staleness / replay of an old day).
-  maxStalenessDays: z.number().int().min(0),
-  // Rows per signed report (keeps each onReport under the gas budget).
-  maxRowsPerReport: z.number().int().min(1),
-  evm: z.object({
-    chainSelectorName: z.string(), // e.g. "arc-testnet"
-    isTestnet: z.boolean(),
-    // ClippoReportReceiver (the reporting adapter registered as ClippoEscrow.reportAdapter)
-    receiverAddress: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
-    gasLimit: z.string(), // per report
-  }),
-});
 
-type Config = z.infer<typeof configSchema>;
 
 /** What every node returns for the manifest; each field must be IDENTICAL across nodes. */
 type NodeManifest = { day: string; sourceHash: string; hash: string; clips: string };
@@ -211,6 +186,9 @@ const settle = (runtime: Runtime<Config>, requestedDay: string): string => {
       })
       .result();
 
+    // TODO(ItemFailed): ClippoReportReceiver swallows per-item reverts and emits ItemFailed, so a SUCCESS write may
+    // still have credited nothing for some/all rows. WriteReportReply (cre-sdk) exposes no receipt logs, so this cannot
+    // be detected here; a read-back of ClippoEscrow state (or an off-workflow ItemFailed log scan) is needed.
     if (resp.txStatus !== TxStatus.SUCCESS) {
       throw new Error(`writeReport batch ${i + 1}/${batches.length} failed: ${resp.errorMessage ?? resp.txStatus}`);
     }
@@ -263,8 +241,8 @@ const initWorkflow = (config: Config) => {
   const httpTrigger = new cre.capabilities.HTTPCapability();
   return [
     cre.handler(cron.trigger({ schedule: config.schedule }), onCron),
-    // authorizedKeys: add the EVM address(es) allowed to trigger a DEPLOYED workflow; simulation needs none.
-    cre.handler(httpTrigger.trigger({}), onHttp),
+    // authorizedKeys come from config.httpAuthorizedKeys; production sets requireHttpAuthorizedKeys so startup fails if empty.
+    cre.handler(httpTrigger.trigger(httpTriggerConfig(config)), onHttp),
   ];
 };
 

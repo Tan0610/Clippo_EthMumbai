@@ -14,6 +14,8 @@ import { DeskAnalytics } from "./DeskAnalytics";
 import { ClippoCount, ConfirmedViews, hasConfirmed } from "./ConfirmedViews";
 import { WorldCheck, worldFailText, type WorldResult } from "./WorldCheck";
 import type { WorldProof } from "./api";
+import { StepUpApprove, StepUpReturnPanel } from "./StepUpApprove";
+import type { SplitResult } from "./hooks";
 
 export function DeskView() {
   const camps = useAsync(api.myCampaigns);
@@ -76,6 +78,14 @@ export function DeskView() {
     }
   }
   /** One approver's split approval. Each approver (campaigner, then admin) runs their OWN fresh World ID check on the identical split. */
+  /** Back from the World ID step-up redirect (agent proposals): the panel already posted the release; refresh what the page shows. */
+  function stepUpSettled(res: SplitResult | null, attempt: { campaignId: string } | null) {
+    setPanelKey((k) => k + 1);
+    if (!res || !attempt) return;
+    const cid = attempt.campaignId;
+    setAgentProp((x) => { const n = { ...x }; if (res.proposal.status !== "PENDING") delete n[cid]; return n; });
+    setProposals((p) => ({ ...p, [cid]: res.proposal }));
+  }
   async function worldDone(r: WorldResult, proof?: WorldProof, message?: string) {
     const rv = review;
     setReview(null);
@@ -117,6 +127,7 @@ export function DeskView() {
         <Link href="/desk/new" className="btn">New campaign</Link>
       </div>
 
+      <StepUpReturnPanel onSettled={stepUpSettled} />
       {msg && <div className={`notice${msg.kind === "bad" ? " warn" : ""}`} role="status" style={{ marginBottom: 28 }}><b>{msg.kind === "ok" ? "Recorded" : "Nothing changed"}</b>{msg.text}</div>}
       {Object.entries(proposals).map(([cid, p]) => {
         const c = camps.status === "ready" ? camps.data.find((x) => x.id === cid) : null;
@@ -227,7 +238,17 @@ export function DeskView() {
           <AgentPassPanel campaignId={c.id} title={`Agent Pass activity: ${c.title}`} refreshKey={panelKey} />
         </section>
       ))}
-      {review && <WorldCheck key={review.c.id + review.hash} kind="agent-pass" action="clippo-approve-split" signal={`split:${review.c.id}:${review.hash}`} purpose={review.proposalId ? "Confirm you approve the agent's split" : "Confirm you approve this split"} onResult={worldDone} />}
+      {review && review.proposalId && (
+        <div className="notice" role="region" aria-label="Agent Pass gate" style={{ marginTop: 28 }}>
+          <b>Agent Pass gate: World ID step-up</b>
+          <span>You are releasing the agent&rsquo;s split for {review.c.title}: {review.splits.length} creator{review.splits.length === 1 ? "" : "s"}, {money(review.splits.reduce((n, x) => n + x.amount, 0), 2)} USDC. You will leave for World ID for a fresh Orb-class check, then return here to complete it. Nothing is paid unless the check passes.</span>
+          <div className="row">
+            <StepUpApprove campaignId={review.c.id} splits={review.splits} agentProposalId={review.proposalId} onError={() => setPanelKey((k) => k + 1)} />
+            <button className="btn ghost sm" onClick={() => setReview(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {review && !review.proposalId && <WorldCheck key={review.c.id + review.hash} kind="agent-pass" action="clippo-approve-split" signal={`split:${review.c.id}:${review.hash}`} purpose="Confirm you approve this split" onResult={worldDone} />}
     </div>
   );
 }
