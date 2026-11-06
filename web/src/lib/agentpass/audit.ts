@@ -3,15 +3,17 @@ import type { ApiError } from "../http";
 
 export type AuditOutcome =
   | "OK" | "CANCELLED" | "EXPIRED_PROOF" | "PROPOSAL_EXPIRED" | "REPLAYED" | "WRONG_APPROVER" | "SPLIT_CHANGED"
-  | "ALREADY_RELEASED" | "ALREADY_APPROVED" | "PROOF_INVALID" | "AGENT_UNVERIFIED" | "AI_REJECTED" | "REFUSED";
-export type ProofStatus = "VALID" | "NONE" | "CANCELLED" | "EXPIRED" | "REPLAYED" | "INVALID";
+  | "ALREADY_RELEASED" | "ALREADY_APPROVED" | "PROOF_INVALID" | "AGENT_UNVERIFIED" | "AI_REJECTED" | "REFUSED"
+  | "STEPUP_DENIED" | "STEPUP_EXPIRED" | "STEPUP_INVALID" | "STEPUP_ASSURANCE" | "STEPUP_STALE" | "STEPUP_IDENTITY" | "STEPUP_BINDING" | "STEPUP_REPLAYED" | "STEPUP_DEPENDENCY";
+export type ProofStatus = "VALID" | "NONE" | "CANCELLED" | "EXPIRED" | "REPLAYED" | "INVALID"
+  | "STEPUP_DENIED" | "STEPUP_EXPIRED" | "STEPUP_INVALID" | "STEPUP_ASSURANCE" | "STEPUP_STALE" | "STEPUP_IDENTITY" | "STEPUP_BINDING" | "STEPUP_REPLAYED" | "STEPUP_DEPENDENCY";
 
 export interface AuditInput {
   campaignId: string;
   proposalId?: string | null;
   actorId?: string | null;
   actorRole?: "AGENT" | "CAMPAIGNER" | "ADMIN" | null;
-  event: "DELEGATED" | "PROPOSED" | "APPROVED" | "REFUSED";
+  event: "DELEGATED" | "PROPOSED" | "APPROVED" | "REFUSED" | "STEPUP_REQUESTED";
   outcome: AuditOutcome;
   code?: string | null;
   detail: string;
@@ -60,6 +62,18 @@ export function classifyRefusal(e: ApiError): { outcome: AuditOutcome; proofStat
     case "FORBIDDEN": return { outcome: "WRONG_APPROVER", proofStatus: "NONE" };
     case "AGENT_UNVERIFIED":
     case "AGENT_REVOKED": return { outcome: "AGENT_UNVERIFIED", proofStatus: "NONE" };
+    case "STEPUP_DENIED": return { outcome: "STEPUP_DENIED", proofStatus: "STEPUP_DENIED" };
+    case "STEPUP_EXPIRED": return { outcome: "STEPUP_EXPIRED", proofStatus: "STEPUP_EXPIRED" };
+    case "STEPUP_TOKEN_INVALID":
+    case "STEPUP_NONCE_MISMATCH":
+    case "STEPUP_STATE_INVALID": return { outcome: "STEPUP_INVALID", proofStatus: "STEPUP_INVALID" };
+    case "STEPUP_ASSURANCE": return { outcome: "STEPUP_ASSURANCE", proofStatus: "STEPUP_ASSURANCE" };
+    case "STEPUP_STALE_AUTH": return { outcome: "STEPUP_STALE", proofStatus: "STEPUP_STALE" };
+    case "STEPUP_IDENTITY_MISMATCH":
+    case "STEPUP_SAME_HUMAN": return { outcome: "STEPUP_IDENTITY", proofStatus: "STEPUP_IDENTITY" };
+    case "STEPUP_BINDING_MISMATCH": return { outcome: "STEPUP_BINDING", proofStatus: "STEPUP_BINDING" };
+    case "STEPUP_CONSUMED": return { outcome: "STEPUP_REPLAYED", proofStatus: "STEPUP_REPLAYED" };
+    case "STEPUP_DEPENDENCY": return { outcome: "STEPUP_DEPENDENCY", proofStatus: "STEPUP_DEPENDENCY" };
     default: return { outcome: "REFUSED", proofStatus: "NONE" };
   }
 }
