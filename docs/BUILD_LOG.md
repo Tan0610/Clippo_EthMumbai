@@ -45,7 +45,25 @@ Track status at the start:
 
 ## Log
 
-### 21. Merged main into this branch (teammate's World ID step-up), commit pending
+### 22. PR #2 merged into main and the site redeployed from main, no repo commit
+
+- **What:** PR #2 (`feat/cre-core` into `main`) was merged with a merge commit, `ab35b35`; `main` is identical to the tree tested on the branch (0 differing files). The teammate's migration `20261106000000_world_stepup` was applied to the `clippo-cre` Neon database first (without it the site would have broken). Then `https://clippo-cre.vercel.app` was redeployed with the Vercel CLI from a clean checkout of `main` (the project is not connected to GitHub, so every deploy is a CLI upload).
+- **Checked on the live site after the deploy:** `/api/chain/config` shows the escrow `0x1e05373c199D764f7dE0353d58AFEa2b4C6326Ef` and `explorerBase`; `/api/health`: db, chain, YouTube key and attestor wallet detected, dev bypass off, dangerous keys absent; `GET /api/campaigns/cmw5jiz940005scec1r7rcyaz` still returns `confirmedViews` 3, `pendingViews` 0 and the real CRE tx `0xa41f91da...c8409`; `/api/snapshots/clips` answers (empty until the approval day ends, UTC).
+- **Not proven:** the teammate's World step-up is not configured on the site (no `WORLD_AUTH_*`) and has not run against the real issuer; the creator's own `/ledger` sign-in on production was not tried (needs a wallet signature).
+
+### 23. Docs aligned with the three tracks, README rewritten, architecture diagram redrawn, commit pending
+
+- **What:** the owner asked for all documents to be updated per the Arc, World IDKit and Chainlink CRE tracks, plus the README. Branch `docs/track-docs` from `main` (`ab35b35`); four agents each owned separate files and checked their claims against the code, then the lead rewrote the cross-track docs.
+  - Arc: `docs/SUBMISSION_ARC.md`, `docs/tracks/ARC.md`, `docs/tracks/arc-studio-prompt.md`: the six prize bullets mapped to code (met, partly, not built), the four qualification requirements with honest status, chain facts read back with `cast`.
+  - IDKit: `docs/tracks/WORLD_IDKIT.md`, `world-idkit-demo.md`, `world-idkit-debrief.md`, `docs/WORLD_SETUP_CHECK.md`: the trust moment, the credential (`proofOfHuman` preset) and why, server and on-chain verification, success and failure paths, debrief template left blank.
+  - CRE: `docs/tracks/CRE.md`, `cre/README.md`, `docs/CRE_PLAN.md`, `docs/CRE_SCOPE.md`, `docs/CRE_DEPLOY.md`: requirement table, the "is it core" answer, the three-screen demo, reproduce commands, not-proven list; plan, scope and deploy sheet got dated status banners.
+  - Diagram: `docs/architecture.svg` redrawn for the current design (validated with `xmllint`, rendered and checked in a browser) and `docs/ARCHITECTURE.md` rewritten.
+  - Lead: `README.md` (overview, evidence table, the three tracks with status, AI use and project history), `docs/FOCUS.md`, `docs/DEMO_SCRIPT.md` (the three-screen CRE demo and what can really be shown live), `docs/TRACKS.md`, `docs/SUBMISSION_CHECKLIST.md`, and stale deploy statements in `docs/DEPLOY.md`, `docs/DEPLOY_ENV.md`, `docs/BACKEND_CONFORMANCE.md`, `web/API.md`, and the header of `docs/tracks/cre-simulation-real-arc.txt`.
+- **Tests:** none run (docs only). Counts quoted in the docs (forge 114, web 325 + 1 skipped, CRE 26) are from the merged-tree run on 2026-11-07. Secret scan of the branch: no secret values, no key-like strings.
+- **Found while writing (code gaps, not fixed here):** the Selfie Check and Passport wording in `IDKitSheet.tsx`, `lib/worldid/signup.ts` and `JoinView.tsx` is stronger than the installed typings support; the server does not enforce which credential was used; a failed on-chain wallet link is not shown to the user (`/api/worldid/verify` still answers 200 with `onchain.linked: false`); `reclaimUnapproved` and `withdrawFees` have no UI or API path; a stale `TODO(ItemFailed)` comment in `cre/workflows/clippo-settlement/main.ts`; `NEXT_PUBLIC_WORLD_LEVEL` is listed in `DEPLOY_ENV.md` but no code reads it.
+- **Not proven:** the Mermaid diagrams were not rendered (preview them on GitHub); the v2 fork-run numbers (3 of 5 clips kept) are quoted from this log only; what the teammate's Arc Studio URL contains.
+
+### 21. Merged main into this branch (teammate's World ID step-up), commit `248011f` (in main as `ab35b35`)
 
 - **What:** `main` received a teammate's World ID step-up (`worldauth`, branch `feat/world-idkit-stepup-and-deploy-fixes`) after this work began, and it overlapped with ours. Trial merge: 36 files, about 100 conflict hunks. Decision (owner): keep main's step-up, drop ours.
   - Reverted our step-up commit `19205ba` in a normal revert commit `b157008` (history kept), then merged `origin/main`.
@@ -237,30 +255,27 @@ Track status at the start:
 
 ## Waiting on you
 
-00. Sign in at https://clippo-cre.vercel.app with `0x8CF9…60e5` (creator) and open /ledger to see the Confirmed views; run `! cre account access` and tell Claude the result; record the demo.
-0. CRE: run `cre account access` and report the result; put a YouTube Data API key only in `cre/.env` and Vercel; confirm that existing channels must re-verify with a wallet-bound code.
-1. **Clippo backend wallet:** create a new wallet, fund it with testnet USDC, and send me only its address. The address is fixed at deploy. The private key goes in Vercel as `HUMAN_ATTESTOR_PRIVATE_KEY`.
-2. **Arc Studio:** `npm i -g @circle-fin/arc-studio-cli`, then `arc-studio login`.
-3. **World portal (`auth.world.org/portal`):** create a client. Callback URL `https://clippo-six.vercel.app/api/agentpass/stepup/callback`, client auth `client_secret_basic`, and the same environment (production or sandbox) for portal, credentials and issuer.
-4. **Vercel env:** `YOUTUBE_API_KEY`, `HUMAN_ATTESTOR_PRIVATE_KEY`, `WORLD_IDP_CLIENT_ID`, `WORLD_IDP_CLIENT_SECRET`, `WORLD_IDP_REDIRECT_URI`, `SESSION_SECRET` (32+ characters).
-5. **Ask World staff:** which issuer and credential level do the prize's mocked proofs use?
+1. **Arc Studio:** open the Studio URL on file (`https://studio.arc.io/app/34ef3b95-32bd-48f9-9310-b8135e1d92ce`), make it public with Share, and tell Claude what it holds; or import the current contract into Studio. The prize requires it.
+2. **IDKit live run:** set `WORLD_ID_APP_ID`, `WORLD_ID_RP_ID`, `WORLD_ID_SIGNING_KEY` on the Vercel project `clippo-cre`, redeploy, run one real proof and one failure path, then fill `docs/tracks/world-idkit-debrief.md`.
+3. **CRE deploy access:** run `! cre account access` and tell Claude the result (optional for the prize).
+4. **Sign in** at https://clippo-cre.vercel.app with `0x8CF9...60e5` as a creator and open /ledger to see the Confirmed views.
+5. **Record the demo video** (under 4 minutes; `docs/DEMO_SCRIPT.md`) and submit before 09:00 IST.
+6. Merge the docs PR (branch `docs/track-docs`).
 
 ## Coming next
 
-CRE (branch `feat/cre-core`, see `docs/CRE_PLAN.md`): backend, workflow, frontend and the local end-to-end are built. Left: a real YouTube read (needs the owner's key, test channel and wallet), the real Arc run (needs the deployed escrow), browser check of the screens with real data, evidence and docs, and pin and lock if deploy access is approved.
-
-Project-wide:
-
-1. Deploy the new contracts on Arc (you sign), then set the real receiver in `cre/.../config.production.json`, the new addresses in Vercel, and `ESCROW_DEPLOY_BLOCK`.
-2. Build and show the work in Arc Studio, and get the shareable project URL.
-3. Run one full real flow on Arc: fund, approve, CRE report, claim, dispute. Save the transaction hashes here.
-4. Write the IDKit credential rationale and debrief (only after a real run), and redraw `docs/architecture.svg` for the new design.
-5. Record the demo video (under 4 minutes), fill `docs/SUBMISSION_CHECKLIST.md`, submit before the deadline.
+1. UI work, on a new branch from `main`.
+2. Fix the IDKit code gaps listed in entry 23 (credential wording, server-side credential check, show a failed on-chain link).
+3. Run dispute, claim and close on real Arc (the retention window is 7 days, so this needs a short retention campaign), and one funded campaign through the UI.
+4. If CRE deploy access is approved: deploy the workflow, pin its id and lock the receiver.
 
 ## Known gaps
 
-- Nothing from our changes has run on real Arc yet.
-- The live site still has no `YOUTUBE_API_KEY` and still runs the old build.
-- `e2e-chain.mjs` was not updated for the new contract.
-- `docs/architecture.svg` still shows the older design; the e2e scripts still target the old escrow.
+- On real Arc only a CRE report and the deploy script's campaign setup have run; funding through the UI, dispute, claim, close and the split approvals have not.
+- The CRE run is a simulation: one node, our wallet sends the report through Chainlink's test forwarder, the receiver is not locked, nothing is deployed on the CRE network.
+- The deployed site is seeded (labelled `[SEED]`) and has no LLM, World ID, admin list or blob storage configured (`/api/health` `ready: false`).
+- No real World proof has run; the step-up has never run against the real issuer.
+- Arc Studio was not used by us; what the teammate's Studio URL holds is unverified.
+- `docs/E2E_CHAIN.md` and `web/scripts/e2e-chain.mjs` still describe the old escrow.
+- The Vercel project is not connected to GitHub: every deploy is a CLI upload.
 - Read `docs/FOCUS.md` before starting new work.

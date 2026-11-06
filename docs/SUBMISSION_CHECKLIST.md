@@ -2,12 +2,12 @@
 
 | Item | Value / status |
 | --- | --- |
-| Repo link | https://github.com/Tan0610/Clippo_EthMumbai (the `origin` remote; one repo; `contracts/lib/*` are git submodules, so clone with `--recurse-submodules`; `contracts/`, `web/` and `cre/` have no `.git` of their own). OPEN: confirm the merged work is pushed to the branch the judges see. |
+| Repo link | https://github.com/Tan0610/Clippo_EthMumbai (the `origin` remote; one repo; `contracts/lib/*` are git submodules, so clone with `--recurse-submodules`; `contracts/`, `web/` and `cre/` have no `.git` of their own). DONE: the repository is public (checked 2026-11-07) and the work is merged into `main` (PR #2, `ab35b35`), the default branch the judges see. Contracts, web and CRE are all in this one repo. |
 | Arc Studio project URL | https://studio.arc.io/app/34ef3b95-32bd-48f9-9310-b8135e1d92ce (from main's commit `943779e`; required, show Studio in the video). OPEN: not verified by us. Open it, make it public with the Studio **Share** button, and check what it holds before relying on it. |
 | Deployed escrow (Arc testnet explorer) | https://explorer.testnet.arc.io/address/0x1e05373c199D764f7dE0353d58AFEa2b4C6326Ef DONE: the enforcing escrow on Arc testnet, simulation mode; receiver `0x6b0f6C0f324C615Add6BfcA5EE0b8eeD66F2C0cd`. Older 3-arg escrows, not the enforcing design: `0xd8453c22996bea11598a3dbf05112675b945c39c` and `0xc7b9588ee0a4bff31e17ece1141ea404ad05e310`. |
 | Demo video (2 to 4 min, hard cap 4:00; 720p or better; no AI voiceover; not sped up) | `<VIDEO_URL>` OPEN. Not recorded. Script in `docs/DEMO_SCRIPT.md`. |
-| Architecture diagram | `docs/architecture.svg` and `docs/ARCHITECTURE.md` (export to PNG for the form; not exported yet; the SVG still shows the older design, update it first; `ARCHITECTURE.md` is current) |
-| Live app URL (optional) | https://clippo-cre.vercel.app (new Vercel project, deployed by the Vercel CLI from the feature branch, points at the enforcing escrow; redeploy it from `main` after the merge). `/api/health` shows `ready: false` because the LLM, World ID, admin wallets and blob storage are not configured. |
+| Architecture diagram | DONE: `docs/architecture.svg` is redrawn for the current design (2026-11-07: enforcing escrow, receiver, CRE reading YouTube, indexer, Confirmed views, status chips for what is simulated or unproven), and `docs/ARCHITECTURE.md` has the Mermaid versions. OPEN: export the SVG to PNG for the form (open it in a browser and screenshot it, or `npx -y svgexport docs/architecture.svg docs/architecture.png 2x`). |
+| Live app URL (optional) | https://clippo-cre.vercel.app: a separate Vercel project and database, deployed by the Vercel CLI from `main` at `ab35b35` (the project is not connected to GitHub, so redeploys are CLI uploads), pointing at the enforcing escrow. Demo page: `/slips/cmw5jiz940005scec1r7rcyaz` (3 Confirmed views, proof link). The user, channel, campaign and clip behind it are seeded and labelled `[SEED]`; views, credit and proof are real. `/api/health` shows `ready: false` because the LLM, World ID, admin wallets and blob storage are not configured. |
 
 ## Per track
 
@@ -27,6 +27,8 @@
   - [ ] Trust event and minimum-credential rationale said in the video (see `docs/tracks/WORLD_IDKIT.md`)
   - [ ] `docs/tracks/world-idkit-debrief.md` four items filled
   - Note: World ID proofs for the prize are mocked fake identities, not for production.
+  - `WORLD_ID_*` is NOT set on the deployed site (`/api/health` shows `worldId: false`), so nothing can be run live there until it is set and redeployed.
+  - Known gaps found while documenting (details in `docs/tracks/WORLD_IDKIT.md` section 8): the Selfie Check and Passport wording in the code comments and the `WhyProofOfHuman` text is stronger than the typings support; the server does not enforce which credential was used; a failed on-chain wallet link is not shown to the user.
 - Arc and Chainlink prize pages RE-CHECKED live 2026-11-06 (https://ethglobal.com/events/mumbai/prizes/arc and /chainlink); verified items below. Re-read once more right before submitting.
 - Arc, "Best Smart Contracts with Advanced Stablecoin Logic, In Arc Studio" ($3,000). Every Arc prize requires Arc Studio as the starting point:
   - [ ] State the bounty name exactly in the submission (written in `docs/SUBMISSION_ARC.md`; type it into the form)
@@ -35,7 +37,7 @@
   - [ ] Shareable Arc Studio project URL that judges can open (on file in the table above from main's commit `943779e`; make it public with Share and check it loads)
   - [ ] Studio shown in the demo video
   - [ ] Functional MVP: working frontend and backend, campaign shown funding to claim (site is deployed on the new escrow and shows the real CRE result; funding to claim through the app on real Arc is not run)
-  - [ ] Architecture diagram (`docs/architecture.svg` still shows the older design)
+  - [x] Architecture diagram (`docs/architecture.svg`, redrawn 2026-11-07; export to PNG for the form)
   - [ ] Video demonstration + presentation (effective use of Arc Studio and Circle developer tools)
   - [ ] Link to GitHub/Replit repo
 - Chainlink "Best workflow with CRE" ($1,500; verified 2026-11-06):
