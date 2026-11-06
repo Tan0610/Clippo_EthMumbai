@@ -1,5 +1,6 @@
 import { getUser } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { confirmedForCampaign, NO_CONFIRMED, withPending } from "@/lib/confirmed";
 import { campaignView, canManageCampaign, type Ctx } from "@/lib/domain";
 import { ApiError, ok, route } from "@/lib/http";
 import { latestPerSubmission } from "@/lib/snapshots";
@@ -17,11 +18,13 @@ export const GET = route(async (req: Request, { params }: Ctx) => {
 
   const snaps = (await latestPerSubmission()).filter((s) => s.campaignId === c.id);
   const totalViews = snaps.reduce((n, s) => n + s.cumulativeViews, 0);
+  // CRE-confirmed views (on-chain) vs Clippo's own count; HUMAN_SPLIT has no CRE views
+  const confirmed = withPending(c.payoutMode === "HUMAN_SPLIT" ? NO_CONFIRMED : await confirmedForCampaign(c.id), c.payoutMode === "HUMAN_SPLIT" ? 0 : totalViews);
   const approvedClips = await db.verdict.count({ where: { result: "APPROVE", submission: { campaignId: c.id } } });
   const { campaigner, ...rest } = c;
   return ok({
     campaign: campaignView(rest),
     campaigner,
-    performance: { totalViews, approvedClips, viewTarget: c.viewTarget },
+    performance: { totalViews, ...confirmed, approvedClips, viewTarget: c.viewTarget },
   });
 });
