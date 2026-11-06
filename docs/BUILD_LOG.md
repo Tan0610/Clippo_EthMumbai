@@ -45,7 +45,14 @@ Track status at the start:
 
 ## Log
 
-### 7. CRE branch and plan, commit pending
+### 8. CRE plan revised after a "is it core?" review, commit pending
+
+- **What:** the owner asked whether CRE is core or an add-on. Checked the code and answered: as first planned it was a courier, not core. Updated `docs/CRE_PLAN.md` with section 3b (five findings, a three-layer fix: truth, visible, immutable) and a new milestone order that builds "confirmed views" in the app first (M4').
+- **Findings, from the code:** `setReportAdapter` accepts any address; no screen reads `ViewsReported` (all views shown come from the backend `ViewSnapshot`); in a simulation the report is sent from our own wallet; the workflow is only locked if a deployed workflow id is pinned.
+- **Files:** `docs/CRE_PLAN.md`, this log. No code changed.
+- **Not proven:** none of the three layers is built. Deploy access is not enabled, so the immutable layer may not be possible.
+
+### 7. CRE branch and plan, commit `7977884`
 
 - **What:** created branch `feat/cre-core` (from `feat/core-sponsor-integration` at `8c28d88`, in its own git worktree at `.worktrees/cre` so the other checkout is not switched). Read how CRE is wired and wrote `docs/CRE_PLAN.md`: how it works today, six gaps, a target design where CRE nodes read YouTube views themselves, milestones M0 to M6 with a cut line, and what we need from the owner.
 - **Why:** the earlier review scored CRE 2 of 5 because the workflow only reads Clippo's own server, so a cron job with one key would do the same, and nothing in the app shows CRE.
