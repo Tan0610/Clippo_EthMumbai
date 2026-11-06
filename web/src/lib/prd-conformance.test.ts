@@ -167,21 +167,29 @@ describe("PRD 3.3 / 4.6 admin approval before join, refund on reject", () => {
     delete process.env.ESCROW_ADDRESS;
   });
 
-  it("the admin queue shows funded campaigns, flagged clips, appeals and unusual view patterns", async () => {
+  it("the admin queue shows funded campaigns, appeals and unusual view patterns; NEEDS_HUMAN clips reach admin only when chosen, unreadable, or fraud-flagged", async () => {
     const camp = await db.user.findUniqueOrThrow({ where: { wallet: W.camp } });
     const cre = await db.user.findUniqueOrThrow({ where: { wallet: W.cre1 } });
-    const c = await db.campaign.create({ data: { campaignerId: camp.id, title: "Queue", story, contentSource: "LINK", platforms: ["YOUTUBE"], payoutMode: "PER_VIEW", ratePer1k: 2, poolSize: 100, status: "FUNDED" } });
+    // CAMPAIGNER_ONLY campaign: borderline clips are the campaigner's, not the admin's
+    const c = await db.campaign.create({ data: { campaignerId: camp.id, title: "Queue", story, contentSource: "LINK", platforms: ["YOUTUBE"], payoutMode: "HUMAN_SPLIT", approver: "CAMPAIGNER_ONLY", poolSize: 100, status: "FUNDED" } });
+    // a campaign where the campaigner chose "me and an admin"
+    const cAdmin = await db.campaign.create({ data: { campaignerId: camp.id, title: "QueueAdmin", story, contentSource: "LINK", platforms: ["YOUTUBE"], payoutMode: "HUMAN_SPLIT", approver: "CAMPAIGNER_AND_ADMIN", poolSize: 100, status: "FUNDED" } });
     const ch = await db.channel.findFirstOrThrow({ where: { userId: cre.id } });
-    const mkSub = (videoId: string, result: "NEEDS_HUMAN" | "REJECT", appealStatus: "NONE" | "PENDING" = "NONE") =>
-      db.submission.create({ data: { campaignId: c.id, creatorId: cre.id, channelId: ch.id, link: `https://youtu.be/${videoId}`, videoId, metadata: {}, verdict: { create: { result, confidence: 0.4, reason: "r", appealStatus } } } });
-    const flagged = await mkSub("q-flag", "NEEDS_HUMAN");
-    const appealed = await mkSub("q-appeal", "REJECT", "PENDING");
-    await db.fraudFlag.create({ data: { kind: "VIEW_ANOMALY", campaignId: c.id, submissionId: flagged.id, day: "2026-10-01", details: {} } });
+    const mkSub = (campaignId: string, videoId: string, result: "NEEDS_HUMAN" | "REJECT", opts: { appealStatus?: "NONE" | "PENDING"; flags?: string[] } = {}) =>
+      db.submission.create({ data: { campaignId, creatorId: cre.id, channelId: ch.id, link: `https://youtu.be/${videoId}`, videoId, metadata: {}, verdict: { create: { result, confidence: 0.4, reason: "r", appealStatus: opts.appealStatus ?? "NONE", flags: opts.flags ?? [] } } } });
+    const fraudFlagged = await mkSub(c.id, "q-flag", "NEEDS_HUMAN");
+    const unreadable = await mkSub(c.id, "q-unread", "NEEDS_HUMAN", { flags: ["unreadable"] });
+    const plain = await mkSub(c.id, "q-plain", "NEEDS_HUMAN"); // campaigner-only, nothing admin-owned
+    const chosen = await mkSub(cAdmin.id, "q-chosen", "NEEDS_HUMAN");
+    const appealed = await mkSub(c.id, "q-appeal", "REJECT", { appealStatus: "PENDING" });
+    await db.fraudFlag.create({ data: { kind: "VIEW_ANOMALY", campaignId: c.id, submissionId: fraudFlagged.id, day: "2026-10-01", details: {} } });
     const { GET } = await import("@/app/api/admin/queue/route");
     expect((await j(await GET(req("/api/admin/queue", W.camp)))).status).toBe(403);
     const q = (await j(await GET(req("/api/admin/queue", W.adm)))).body;
-    expect(q.pendingCampaigns.map((x: { id: string }) => x.id)).toContain(c.id);
-    expect(q.flaggedSubmissions.map((x: { id: string }) => x.id)).toContain(flagged.id);
+    const flaggedIds = q.flaggedSubmissions.map((x: { id: string }) => x.id);
+    expect(q.pendingCampaigns.map((x: { id: string }) => x.id)).toEqual(expect.arrayContaining([c.id, cAdmin.id]));
+    expect(flaggedIds).toEqual(expect.arrayContaining([fraudFlagged.id, unreadable.id, chosen.id]));
+    expect(flaggedIds).not.toContain(plain.id); // campaigner owns it; it stays out of the admin queue
     expect(q.appeals.map((x: { id: string }) => x.id)).toContain(appealed.id);
     expect(q.fraudFlags.some((f: { kind: string }) => f.kind === "VIEW_ANOMALY")).toBe(true);
   });
@@ -227,6 +235,15 @@ describe("PRD 4.2 verification agent: disclosure label and prohibited claims are
     expect(checkStoryRules({ ...s, disclosureLabel: "Paid for by Acme" }, "sponsored").missingDisclosure).toBe(true);
     expect(checkStoryRules(s, "This is Risk-Free!").prohibitedHit).toBe("risk-free");
   });
+  it("checkStoryRules: when the story requires attribution, any crediting signal or @mention satisfies it; absence downgrades; no requirement is inert", () => {
+    const withAttr = { ...s, attribution: "Credit the original creator" };
+    expect(checkStoryRules(withAttr, "great clip about ledgerlane").attributionMissing).toBe(true); // required but nothing credits the source
+    expect(checkStoryRules(withAttr, "credit to the original creator").attributionMissing).toBe(false);
+    expect(checkStoryRules(withAttr, "courtesy of ledgerlane").attributionMissing).toBe(false);
+    expect(checkStoryRules(withAttr, "footage via @ledgerlane").attributionMissing).toBe(false); // @mention counts
+    expect(checkStoryRules(withAttr, "h/t the ledgerlane team").attributionMissing).toBe(false); // "h/t" -> "h t"
+    expect(checkStoryRules({ ...s, attribution: "" }, "no credit anywhere").attributionMissing).toBe(false); // not required
+  });
   it("an LLM approval is downgraded to human review when the label is missing or a prohibited claim is present; a clean clip passes", async () => {
     const clean = await verifyClip(input("#ad Ledgerlane closes the books fast"), approver);
     expect(clean).toMatchObject({ result: "APPROVE" });
@@ -239,6 +256,13 @@ describe("PRD 4.2 verification agent: disclosure label and prohibited claims are
     expect(claim.flags).toContain("prohibited_claim_suspected");
     const inTitle = await verifyClip(input("Ledgerlane closes the books", "#ad Ledgerlane"), approver);
     expect(inTitle.result).toBe("APPROVE"); // label may sit in the title/description (e.g. #ad)
+    // attribution backstop: when the story requires crediting the source and the clip carries no crediting signal, downgrade
+    const needsCredit = { ...s, attribution: "Credit the original creator" };
+    const noCredit = await verifyClip({ ...input("#ad Ledgerlane closes the books fast"), story: needsCredit }, approver);
+    expect(noCredit.result).toBe("NEEDS_HUMAN");
+    expect(noCredit.flags).toContain("attribution_missing");
+    const credited = await verifyClip({ ...input("#ad Ledgerlane closes the books, credit @ledgerlane"), story: needsCredit }, approver);
+    expect(credited.result).toBe("APPROVE");
   });
 });
 
