@@ -45,7 +45,14 @@ Track status at the start:
 
 ## Log
 
-### 8. CRE plan revised after a "is it core?" review, commit pending
+### 9. CRE scope defined, commit pending
+
+- **What:** wrote `docs/CRE_SCOPE.md` and rebuilt the milestone section of `docs/CRE_PLAN.md` around it. Decisions in the scope: no smart contract change (the `ViewsReported` event, `reportedViews`, and the workflow pin and lock setters already exist); backend adds a `ViewsReport` table, indexer case, additive API fields, a day-frozen clip manifest route and wallet-bound channel codes; frontend adds one `ConfirmedViews` component and shows Confirmed vs Pending on the creator ledger, brand desk, clip detail and channel screens; the CRE workflow reads YouTube itself. Three tracks on disjoint files with a frozen data contract and sync points S0 to S5, plus the list of what the owner provides and when.
+- **Why:** the owner asked to fix the scope across frontend, backend and contract first, run frontend and backend in parallel, and list owner dependencies before building.
+- **Files:** `docs/CRE_SCOPE.md` (new), `docs/CRE_PLAN.md`, this log. No code changed.
+- **Not proven:** the design is unbuilt. Estimates are guesses. Needs from the owner (access request, YouTube key, test channel, deploy) are open.
+
+### 8. CRE plan revised after a "is it core?" review, commit `c8e11ae`
 
 - **What:** the owner asked whether CRE is core or an add-on. Checked the code and answered: as first planned it was a courier, not core. Updated `docs/CRE_PLAN.md` with section 3b (five findings, a three-layer fix: truth, visible, immutable) and a new milestone order that builds "confirmed views" in the app first (M4').
 - **Findings, from the code:** `setReportAdapter` accepts any address; no screen reads `ViewsReported` (all views shown come from the backend `ViewSnapshot`); in a simulation the report is sent from our own wallet; the workflow is only locked if a deployed workflow id is pinned.
