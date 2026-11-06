@@ -45,7 +45,15 @@ Track status at the start:
 
 ## Log
 
-### 15. First real YouTube read through the workflow, on a local fork, commit pending
+### 16. Deploy sheet for real Arc and two helper wallets, commit pending
+
+- **What:** wrote `docs/CRE_DEPLOY.md` and two scripts: `cre/scripts/arc-deploy.sh` (the owner runs it; asks for the admin key hidden; deploys escrow and receiver in simulation mode, creates and approves one 5 USDC PerView campaign, registers the creator wallet as a human via the attestor signature, writes addresses to the git-ignored `scripts/.arc-deploy.env` and the receiver into `config.production.json`) and `cre/scripts/simulate-arc-real.sh` (CRE `--broadcast` on real Arc reading the real YouTube video). The CRE project's production RPC now uses `rpc.testnet.arc.io`.
+- **Decisions (owner, today):** helper keys generated locally; the owner runs the deploy with their own wallet; the creator is registered by an attestor-signed script (stands in for the World check in the CRE demo, to be said plainly); admin wallet = `0x8CF9113b19Aa9D169365CA7B1BB9d7b957B460e5`.
+- **Wallets (public addresses only):** CRE simulation wallet `0x7149dCB8f568794c7bed1a3Bd90A6f397EeF01F6` (key in `cre/.env`), backend attestor `0x62EdCF9A14F0aB803Ee154EE9709323E56655074` (key in `web/.env.local`). Both testnet-only, never printed, git-ignored.
+- **Checked:** Arc RPCs healthy (chain 5042002), Arc USDC and both Chainlink forwarders have code, explorer up, 114 contract tests pass. Deploy script dry run on a local fork (public test key, mock USDC): 5 of 5 steps passed. The simulation script's dry run reached "kept 1/1 clips" (real YouTube); its write step hung on the fork because the public Arc RPC rate-limited it (429).
+- **Not proven:** nothing ran on real Arc. Real Arc USDC in the campaign step is untested (a fork cannot emulate it). The owner still has to fund two wallets and run the deploy.
+
+### 15. First real YouTube read through the workflow, on a local fork, commit `f54479a`
 
 - **What:** the owner created a YouTube Data API key (saved in `cre/.env` and `web/.env.local`, both git-ignored; an extra pasted fragment was found and trimmed, the key itself never shown), used the test channel `@visualsbyanii` (UCIZw3qclbEDMa4TCFMAatww), and put `clippo:0x8cf9113b19aa9d169365ca7b1bb9d7b957b460e5` in its bio. Checked through the API: the exact line is in the bio and the video `vWk4YV_dbsE` ("FLOW FORTE HACK SUBMISSION") is public on that channel. Added `cre/scripts/simulate-real-youtube.sh` (local fork, mock manifest with one real clip, REAL YouTube API, `--config` override), a `realyt` mode in `mock-backend.mjs`, and `EXTRA_CREATORS` in `local-chain.sh`.
 - **Result:** `cre workflow simulate --broadcast` on the local fork: manifest 1 clip, "youtube agreed: kept 1/1 clips", 1 report, 0 failed rows. `cast call` on the fork escrow: `reportedViews` = 3 (the video's real count at that time) and `credited` = 30000 units = 0.03 USDC at the fork's $10 per 1,000 views. No API key appears in the saved output. Output: `docs/tracks/cre-simulation-real-youtube.txt`.
@@ -189,6 +197,7 @@ Track status at the start:
 
 ## Waiting on you
 
+00. Deploy on Arc: fund `0x8CF9…60e5` (at least 6 USDC plus gas) and `0x7149…01F6` (a little gas) at https://faucet.circle.com, then run `bash scripts/arc-deploy.sh` in `.worktrees/cre/cre` and tell Claude "deployed" (see `docs/CRE_DEPLOY.md`).
 0. CRE: run `cre account access` and report the result; put a YouTube Data API key only in `cre/.env` and Vercel; confirm that existing channels must re-verify with a wallet-bound code.
 1. **Clippo backend wallet:** create a new wallet, fund it with testnet USDC, and send me only its address. The address is fixed at deploy. The private key goes in Vercel as `HUMAN_ATTESTOR_PRIVATE_KEY`.
 2. **Arc Studio:** `npm i -g @circle-fin/arc-studio-cli`, then `arc-studio login`.

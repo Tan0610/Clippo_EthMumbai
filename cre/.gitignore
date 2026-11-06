@@ -3,3 +3,4 @@ node_modules/
 dist/
 scripts/.local-chain.env
 .cre_build_tmp.js
+scripts/.arc-deploy.env
