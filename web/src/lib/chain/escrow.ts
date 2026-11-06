@@ -21,6 +21,8 @@ export interface OnchainCampaign {
   allocated: bigint;
   metadataURI: string;
   highValue: boolean;
+  retention?: bigint;
+  grace?: bigint;
 }
 
 /** Narrow reader used by the indexer/verifiers (swappable in tests). */

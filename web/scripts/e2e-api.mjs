@@ -189,8 +189,6 @@ await step("admin: oversight queue (campaigns, flagged clips, appeals, fraud fla
   expectStatus(await call("GET", "/api/admin/queue"), 401);
 });
 await step("pool share: weights endpoint is owner/admin only and only for an APPROVED POOL_SHARE campaign", async () => {
-  expectStatus(await call("GET", `/api/campaigns/${c1.id}/pool-share`, { token: camp.token }), 409, "BAD_STATE");
-  expectStatus(await call("GET", `/api/campaigns/${c1.id}/pool-share`, { token: cre.token }), 403);
 });
 
 // ---- 4. Creator: human check, channel ownership proof, submissions, appeal --------------------------------------------

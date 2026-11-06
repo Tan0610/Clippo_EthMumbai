@@ -7,5 +7,5 @@ import { requireCron } from "@/lib/modules/cron";
 export const GET = route(async (req: Request) => {
   requireCron(req);
   if (!chainConfig().enabled) return ok({ skipped: true, reason: "ESCROW_ADDRESS is not configured" });
-  return ok(await syncChain({ maxBlocks: 20_000 }));
+  return ok(await syncChain({ maxBlocks: 250_000 }));
 });

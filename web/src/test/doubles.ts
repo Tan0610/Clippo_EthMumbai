@@ -7,6 +7,7 @@ import { setOverride } from "@/lib/config";
 import type { LlmClient, LlmRequest } from "@/lib/ai/llm";
 import type { EscrowReader } from "@/lib/chain/escrow";
 import type { ChainSigner } from "@/lib/chain/signer";
+import type { ClippoWallet } from "@/lib/chain/clippo-wallet";
 import type { PlatformClient, PlatformName, VideoInfo } from "@/lib/platforms";
 import { parseVideoId as ytParse } from "@/lib/youtube";
 import { parseXPostId } from "@/lib/platforms/x";
@@ -141,6 +142,18 @@ export class FakeVideoGenerator implements VideoGenerator {
 }
 
 /* ---------------- Chain ---------------- */
+export const fakeClippoWallet = (): ClippoWallet => ({
+  async signApproval({ human }) {
+    return { human, expiresAt: "9999999999", signature: `0x${"ab".repeat(65)}` };
+  },
+  async ensureHuman() {
+    return null;
+  },
+  async claimFor() {
+    return `0x${"cd".repeat(32)}`;
+  },
+});
+
 export const fakeSigner = (): ChainSigner & { calls: unknown[] } => {
   const calls: unknown[] = [];
   return {
@@ -176,9 +189,10 @@ export function installDoubles() {
   setOverride("worldId", new FakeWorldId());
   setOverride("videoGenerator", new FakeVideoGenerator(0));
   setOverride("chainSigner", fakeSigner());
+  setOverride("clippoWallet", fakeClippoWallet());
 }
 
 export function clearDoubles() {
-  for (const k of ["llm", "youtube", "x", "instagram", "worldId", "videoGenerator", "escrowReader", "chainSigner"] as const) setOverride(k, null);
+  for (const k of ["llm", "youtube", "x", "instagram", "worldId", "videoGenerator", "escrowReader", "chainSigner", "clippoWallet"] as const) setOverride(k, null);
   delete process.env.ESCROW_ADDRESS;
 }

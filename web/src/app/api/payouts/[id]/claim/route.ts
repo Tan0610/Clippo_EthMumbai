@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { publicChainConfig } from "@/lib/chain/config";
 import { claimPreview, getPlatformFees } from "@/lib/chain/fees";
 import { chainMode } from "@/lib/chain/guards";
+import { clippoWallet } from "@/lib/chain/clippo-wallet";
 import { processReceipt } from "@/lib/chain/indexer";
 import { db } from "@/lib/db";
 import type { Ctx } from "@/lib/domain";
@@ -23,7 +24,7 @@ async function loadOwn(req: Request, id: string) {
  * claimable now (PER_VIEW retention window, freeze) and the on-chain call to make (`claim(onchainId)`).
  */
 export const GET = route(async (req: Request, { params }: Ctx) => {
-  const { p } = await loadOwn(req, (await params).id);
+  const { user, p } = await loadOwn(req, (await params).id);
   const fees = await getPlatformFees();
   const creatorBps = p.campaign.creatorFeeBps ?? fees.creatorBps;
   const outstanding = Math.max(0, p.amount - p.claimedAmount);
@@ -38,27 +39,36 @@ export const GET = route(async (req: Request, { params }: Ctx) => {
     releaseAt: p.releaseAt,
     retentionDays: fees.retentionDays,
     chain: publicChainConfig(),
-    onchain: p.campaign.onchainId ? { functionName: "claim", args: [p.campaign.onchainId] } : null,
+    onchain: p.campaign.onchainId ? { functionName: "claimFor", args: [p.campaign.onchainId, user.wallet] } : null,
   });
 });
 
 /**
- * Record a claim. With a configured chain, `txHash` is required and verified: the receipt must be successful and contain a
- * `Claimed` event from the escrow for this payout's campaign and the signed-in creator's wallet; amounts come from the event.
+ * Send a payout. Clippo's wallet triggers `claimFor` and pays the gas; the contract can only send the money to this creator.
+ * A creator who claimed from their own wallet can pass `txHash` instead. Either way the receipt must be successful and contain
+ * a `Claimed` event from the escrow for this payout's campaign and this creator's wallet; amounts come from the event.
  * Frozen payouts (deleted clip / fraud hold) are refused.
  */
 export const POST = route(async (req: Request, { params }: Ctx) => {
   const { user, p } = await loadOwn(req, (await params).id);
   assertVerifiedHuman(user, "claims");
   const raw = await req.text();
-  const { txHash } = body.parse(raw ? JSON.parse(raw) : {});
+  let { txHash } = body.parse(raw ? JSON.parse(raw) : {});
   if (p.frozen) throw new ApiError(409, "PAYOUT_FROZEN", p.frozenReason ?? "This payout is frozen pending review");
   if (p.status === "CLAIMED") throw new ApiError(409, "BAD_STATE", "Already claimed");
 
   chainMode();
 
-  if (!txHash) throw new ApiError(400, "BAD_REQUEST", "txHash of the claim transaction is required");
   if (!p.campaign.onchainId) throw new ApiError(409, "NOT_FUNDED_ONCHAIN", "Campaign has no on-chain escrow");
+  if (!txHash) {
+    try {
+      txHash = await clippoWallet().claimFor(BigInt(p.campaign.onchainId), user.wallet);
+    } catch (e) {
+      if (e instanceof ApiError) throw e;
+      if (/NothingToClaim/.test(String(e))) throw new ApiError(409, "NOTHING_CLAIMABLE", "Nothing is claimable yet. It may still be in its retention window or under dispute.");
+      throw e;
+    }
+  }
   const { logs } = await processReceipt(txHash);
   const mine = logs.find(
     (l) =>
@@ -68,5 +78,5 @@ export const POST = route(async (req: Request, { params }: Ctx) => {
   );
   if (!mine) throw new ApiError(422, "CLAIM_NOT_VERIFIED", "No Claimed event for your wallet and this campaign in that transaction");
   const updated = await db.payout.findUniqueOrThrow({ where: { id: p.id } });
-  return ok({ payout: updated, verified: true });
+  return ok({ payout: updated, verified: true, txHash });
 });
