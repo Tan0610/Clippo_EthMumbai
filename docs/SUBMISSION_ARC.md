@@ -28,10 +28,12 @@ See `docs/architecture.svg` (open in a browser; export/screenshot to PNG for the
 | --- | --- |
 | Bounty | Best Smart Contracts with Advanced Stablecoin Logic, In Arc Studio |
 | Arc Studio project URL | `<ARC_STUDIO_PROJECT_URL>` |
-| Deployed escrow (explorer) | `https://explorer.testnet.arc.io/address/<ESCROW_ADDRESS>` |
+| Deployed escrow (ClippoEscrow) | `0xc7b9588ee0a4bff31e17ece1141ea404ad05e310` — https://explorer.testnet.arc.io/address/0xc7b9588ee0a4bff31e17ece1141ea404ad05e310 |
 | GitHub repo | https://github.com/Tan0610/Clippo_EthMumbai |
 | Demo video (≤5 min) | `<VIDEO_URL>` — script in `docs/DEMO_SCRIPT.md` |
 | Architecture diagram | `docs/architecture.svg` |
+
+The repo's own `ClippoEscrow.sol` was compiled and deployed through Arc Studio, then the full Clippo app was wired to it (`web/.env.local: ESCROW_ADDRESS`), so one repo holds the contract, the frontend, and the other integrations. Constructor: usdc `0x3600…0000`, treasury `0x6c94…354e`, owner/admin `0x48c5…09bD`.
 
 ---
 
