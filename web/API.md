@@ -14,11 +14,9 @@ Common codes: `BAD_REQUEST`(400, has `issues`), `BAD_JSON`, `UNAUTHENTICATED`(40
 4. **Dev bypass (only when `NODE_ENV != production`)**: `POST /api/auth/session {wallet, role}` without a signature, and the `x-wallet: <address>` header. In production both are refused (401 `SIGNATURE_REQUIRED`); `ALLOW_WALLET_HEADER` no longer re-enables them.
 5. Wallets are lower-cased. A wallet listed in `ADMIN_WALLETS` always becomes `ADMIN`. Otherwise role is chosen at first sign-in (`CAMPAIGNER` | `CREATOR`) and is fixed.
 
-**Chain mode.** The API verifies on-chain facts instead of trusting clients: fund, claim, approve, reject, close and split-finalisation only take effect when the escrow's events/state (read via viem from `ARC_RPC_URL`) say so, and an indexer (`POST /api/chain/sync`, plus per-transaction receipt verification) updates the database. `ESCROW_ADDRESS` is required: without it these endpoints answer 503 `NOT_CONFIGURED` (there is no mirrored/mock mode and no `ALLOW_MOCK_CHAIN`). The enforcing escrow (World ID and CRE checked in the contract, disputes, `claimFor`, `humanAttestor`; commit 498f649) also needs `HUMAN_ATTESTOR_PRIVATE_KEY`: the backend wallet that signs World ID approvals, links verified wallets and sends payouts.
+**Chain mode.** The API verifies on-chain facts instead of trusting clients: fund, claim, approve, reject, close and split-finalisation only take effect when the escrow's events/state (read via viem from `ARC_RPC_URL`) say so, and an indexer (`POST /api/chain/sync`, plus per-transaction receipt verification) updates the database. `ESCROW_ADDRESS` is required: without it these endpoints answer 503 `NOT_CONFIGURED` (there is no mirrored/mock mode and no `ALLOW_MOCK_CHAIN`).
 
-Deployment status: not proven. The enforcing escrow is not deployed anywhere, and nothing in this API has run against it on Arc. The two Arc testnet escrows that have code today are the older design. The live site points at `0xd8453c22996bea11598a3dbf05112675b945c39c` (see `/api/chain/config` on clippo-six.vercel.app); a second older-design escrow, `0xc7b9588ee0a4bff31e17ece1141ea404ad05e310`, also has code on Arc testnet (an earlier version of `docs/SUBMISSION_ARC.md` cited it). The routes below describe the code at HEAD, not the live site.
-
-Extra error codes: `SIGNATURE_REQUIRED`/`BAD_SIGNATURE`/`BAD_SIWE_MESSAGE`/`NONCE_INVALID`(401), `PROOF_REUSED`(409), `WORLD_ID_DENIED`(403), `HUMAN_CONFIRMATION_REQUIRED`(428), `CHAIN_NOT_CONFIGURED`(503), `TX_NOT_FOUND`(404), `TX_REVERTED`/`FUND_NOT_VERIFIED`/`CLAIM_NOT_VERIFIED`(422), `CHAIN_STATE_MISMATCH`/`ATTESTATION_MISMATCH`/`PAYOUT_FROZEN`/`ALREADY_APPROVED`/`ALREADY_RELEASED`/`SPLIT_CHANGED`/`NOT_FUNDED_ONCHAIN`/`NOTHING_CLAIMABLE`(409), `WRONG_APPROVER`/`STEP_UP_*`(403; `STEP_UP_UNAVAILABLE` is 503).
+Extra error codes: `SIGNATURE_REQUIRED`/`BAD_SIGNATURE`/`BAD_SIWE_MESSAGE`/`NONCE_INVALID`(401), `PROOF_REUSED`(409), `WORLD_ID_DENIED`(403), `HUMAN_CONFIRMATION_REQUIRED`(428), `CHAIN_NOT_CONFIGURED`(503), `TX_NOT_FOUND`(404), `TX_REVERTED`/`FUND_NOT_VERIFIED`/`CLAIM_NOT_VERIFIED`(422), `CHAIN_STATE_MISMATCH`/`ATTESTATION_MISMATCH`/`PAYOUT_FROZEN`/`ALREADY_APPROVED`(409).
 
 **Roles** shown below as `[creator]`, `[campaigner]`, `[admin]`, `[public]`, `[any]` (any signed-in user).
 
@@ -29,7 +27,7 @@ User      { id, role: "CAMPAIGNER"|"CREATOR"|"ADMIN", wallet, worldIdNullifier: 
 Story     { summary, topic, requiredPoints: string[], prohibitedClaims: string[], disclosureLabel: string, attribution: string, description?: string }
 Campaign  { id, campaignerId, title, story: Story, contentSource: "UPLOAD"|"LINK"|"AI_GENERATED", contentUrl: string|null,
             platforms: ("YOUTUBE"|"X"|"INSTAGRAM")[], payoutMode: "PER_VIEW"|"HUMAN_SPLIT"|"POOL_SHARE",
-            poolShareBasis: "VIEWS"|"APPROVED_CLIPS"|null /* new POOL_SHARE campaigns are always VIEWS, other modes null; APPROVED_CLIPS is only on older rows */, approver: "CAMPAIGNER_ONLY"|"CAMPAIGNER_AND_ADMIN"|null,
+            poolShareBasis: "VIEWS"|"APPROVED_CLIPS"|null, approver: "CAMPAIGNER_ONLY"|"CAMPAIGNER_AND_ADMIN"|null,
             poolSize: number, ratePer1k: number|null, viewTarget: number|null,
             eligibility: "ANYONE_VERIFIED"|"HIGHER_RANKED",
             status: "DRAFT"|"FUNDED"|"APPROVED"|"REJECTED"|"CLOSED",
@@ -74,21 +72,25 @@ World ID 4.0 via the Developer Portal v4 verify API (`POST https://developer.wor
 
 A proof (`worldIdProof` / the body of /worldid/verify) is EITHER the complete IDKit 4.x result `{ protocol_version, nonce, action, environment, responses: [{ identifier, nullifier, proof, ... }] }` (forwarded unmodified; preferred) OR the legacy `{ nullifier_hash, proof, merkle_root?, verification_level?, signal? }` (mapped to a v3 request). Proofs whose `action` or `environment` differ from the server's are refused before any network call.
 
+### World auth step-up (auth.world.org; implemented in code, not yet run live)
+
+Human gate for RELEASING an agent-proposed split (and optionally approving a campaign). OIDC authorization code + S256 PKCE, step-up with `max_age=0` and an `acr` claim. Env (only the first three are required; `WORLD_AUTH_ISSUER` defaults to `https://auth.world.org`, `WORLD_AUTH_TOKEN_AUTH` to `basic`, `WORLD_AUTH_ACR` to `https://world.org/oidc/acr/orb`, `WORLD_AUTH_POLICY` to `agent-required`; missing required vars give 503 `NOT_CONFIGURED`): `WORLD_AUTH_CLIENT_ID`, `WORLD_AUTH_CLIENT_SECRET`, `WORLD_AUTH_ISSUER` (sandbox: `https://sandbox.auth.world.org`), `WORLD_AUTH_REDIRECT_URI` (exact HTTPS URL), `WORLD_AUTH_TOKEN_AUTH`, `WORLD_AUTH_ACR`, `WORLD_AUTH_POLICY` (`agent-required` | `either` | `required`).
+
+- `POST /api/campaigns/:id/stepup/start` `[campaigner owner | admin]`, rate limited (20/hour per user, when the limiter is active). Req: `{ "operation": "SPLIT_RELEASE" | "CAMPAIGN_APPROVE", "splits"?: [{creatorWallet, amount}], "agentProposalId"?: string, "returnPath"?: string }` (`splits` required for `SPLIT_RELEASE`; `CAMPAIGN_APPROVE` is ADMIN only, 403 `WRONG_APPROVER`). The split is run through the same checks as the approval, so an invalid or changed agent split fails here (e.g. 409 `SPLIT_CHANGED`). Creates an attempt (10 minute lifetime) bound to the split hash, campaign and approver role (state, nonce, PKCE) and returns 201 with `attemptId`, `authorizeUrl`, `expiresAt`. `returnPath` is honoured only if it is a same-origin path, else `/desk`.
+- `GET /api/auth/world/callback`: browser redirect from World. Server-side code exchange and ID token validation; the step-up is authorized only if everything checks out (the `iss` parameter is compared only when World sends it). Always answers 302 to the stored return path with only `stepup=approved|cancelled|expired|failed|mismatch`, `attempt=<id>` and `code=<STEPUP_*>`: never the authorization code, state, tokens or nonce. State is single use.
+- `GET /api/stepup/:attemptId` `[owner only]`: `{ status, failureCode, operation, campaignId, splitHash, splits, agentProposalId, authorizedUntil }` (no state, nonce or code verifier; `Cache-Control: no-store`). An authorized attempt is valid for 5 minutes and is consumed once by `POST /api/campaigns/:id/split` or `/attest` via `stepUpAttemptId` (a request carries exactly one of `worldIdProof` / `stepUpAttemptId`, else 400 `PROOF_REQUIRED`).
+
+Failure codes (the split is not released in any of them): `STEPUP_REQUIRED` 428, `STEPUP_NOT_FOUND` 404, `STEPUP_STATE_INVALID` 400, `STEPUP_DENIED` 403 (cancelled), `STEPUP_EXPIRED` 410, `STEPUP_TOKEN_INVALID` 401, `STEPUP_NONCE_MISMATCH` 401, `STEPUP_ASSURANCE` 403, `STEPUP_STALE_AUTH` 403, `STEPUP_IDENTITY_MISMATCH` 403, `STEPUP_SAME_HUMAN` 403, `STEPUP_BINDING_MISMATCH` 409, `STEPUP_CONSUMED` 409, `STEPUP_DEPENDENCY` 502. Ordering: on the split route an agent proposal with no step-up gets `STEPUP_REQUIRED` first (policy `agent-required`/`required`; `either` also accepts an IDKit proof; unconfigured `WORLD_AUTH_*` behaves as `agent-required`). `STEPUP_BINDING_MISMATCH` for a changed split is reachable only for human-built splits, because an agent proposal with changed amounts already fails with 409 `SPLIT_CHANGED`. A user's World identity is enrolled on the first step-up and only if the user is already IDKit-verified; later step-ups must match it (`STEPUP_IDENTITY_MISMATCH`).
+
 ### POST /api/worldid/rp-signature  `[any signed-in]`
 Signs the IDKit request context server-side (the signing key never leaves the server). Req: `{ "action"?: string }` (allowed: the sign-up action, `clippo-approve-campaign`, `clippo-approve-split`). Res 200: `{ "rpContext": { app_id, rp_id, action, environment, nonce, created_at, expires_at, signature } }`. Pass these to `IDKit.request({ app_id, action, rp_context: { rp_id, nonce, created_at, expires_at, signature }, ... })`.
 
 ### POST /api/worldid/verify  `[any signed-in, normally creator]`
 Validates an IDKit proof server-side. Success sets `user.verified = true` and stores the nullifier (unique per human).
-Req: a proof as above. Res 200: `{ "user": User, "mode": "real", "onchain": { "linked": boolean, "txHash"?: string|null, "reason"?: string } }`. With a chain configured, the backend wallet also links the user's wallet to its human on the escrow (`ensureHuman`); `linked: false` plus a `reason` if that call failed or no chain is configured. The verification itself still succeeds.
+Req: a proof as above. Res 200: `{ "user": User, "mode": "real" }`.
 Errors: 403 `WORLD_ID_DENIED` (cancelled/expired/invalid/wrong action), 409 `ALREADY_USED` (nullifier on another account), 503 `NOT_CONFIGURED`.
 
-**Approvals (Agent Pass step, PRD 6.2).** `POST /api/campaigns/:id/attest` (action `clippo-approve-campaign`) and `POST /api/campaigns/:id/split` (action `clippo-approve-split`) need a FRESH proof per approver per action, bound by signal: `approve:<campaignId>` for attest and `split:<campaignId>:<splitHash>` for split (the proof's `signal_hash` must equal `hashSignal(signal)`; pass the same `signal` to IDKit). Create both actions in the Developer Portal with unlimited verifications. A proof is consumed once (409 `PROOF_REUSED`). `/split` takes the IDKit proof only for a split the approver built; the agent's split needs World IdP step-up (below). `/attest` still uses the IDKit proof. After a valid proof, both routes return a `proof` signed by the backend wallet (`{ human, expiresAt, signature }`, 30 minutes) that the escrow checks in `approveCampaign(id, proof)` / `approveSplit(id, creators, amounts, proof)`. This has only run against test doubles, not against a deployed enforcing escrow.
-
-**World IdP step-up (the agent's split).** Not proven: it has never been run against the real issuer (`auth.world.org`) or in a browser. The integration test (`src/lib/agentpass/stepup.integration.test.ts`) uses a local fake issuer. All routes answer 503 `NOT_CONFIGURED` without `WORLD_IDP_CLIENT_ID`, `WORLD_IDP_CLIENT_SECRET` and `WORLD_IDP_REDIRECT_URI` (optional: `WORLD_IDP_ISSUER`, `WORLD_IDP_TOKEN_AUTH_METHOD`, `WORLD_IDP_ACR_VALUES`). The older AgentKit/AgentBook code in `src/lib/agentpass` is not the official World Agent Pass.
-
-- `POST /api/agentpass/stepup/start` `[campaigner|admin]`. Req: `{ "campaignId": string, "splits": [{ "creatorWallet": string, "amount": number }], "agentProposalId"?: string, "returnTo": "desk"|"bench" }`. Res 200: `{ "authorizeUrl": string, "splitHash": string }` and an encrypted httpOnly attempt cookie. Send the browser to `authorizeUrl`. The hash is computed by the server. Refusals use the same codes as `/split` and are audited.
-- `GET /api/agentpass/stepup/callback`. The issuer's redirect, at the URL registered in the portal. Always answers 303 to `/desk` or `/bench`, with `#stepup=<token>` or `#stepup_error=<reason>`, where reason is `cancelled`, `expired`, `stale`, `invalid`, `wrong_account`, `not_eligible` or `unavailable`. Refusals are audited.
-- `POST /api/campaigns/:id/split` with `{ "splits", "stepUpToken", "agentProposalId"? }` uses the token as the human check. The token lasts at most 5 minutes, works once, and is bound to the user, campaign, split hash, proposal and `(iss, sub)`. Errors: 403 `STEP_UP_REQUIRED` (agent's split without a token, with or without `agentProposalId`), 403 `STEP_UP_MISMATCH`, 403 `STEP_UP_EXPIRED`, 403 `STEP_UP_INVALID`, 403 `STEP_UP_WRONG_ACCOUNT`, 409 `PROOF_REUSED`, 400 `HUMAN_CHECK_REQUIRED` (no check at all). The first successful step-up links `(iss, sub)` to the account (`User.worldIdpIdentity`); after that only that World ID can approve for it, and it cannot be linked to a second account.
+**Approvals (Agent Pass step, PRD 6.2).** `POST /api/campaigns/:id/attest` (action `clippo-approve-campaign`) and `POST /api/campaigns/:id/split` (action `clippo-approve-split`) need a FRESH proof per approver per action, bound by signal: `approve:<campaignId>` for attest and `split:<campaignId>:<splitHash>` for split (the proof's `signal_hash` must equal `hashSignal(signal)`; pass the same `signal` to IDKit). Create both actions in the Developer Portal with unlimited verifications. A proof is consumed once (409 `PROOF_REUSED`). The official World ID Agent Pass step-up (auth.world.org) is implemented in code, not yet run live: see "World auth step-up" below. IDKit remains the sign-up uniqueness check and, when `WORLD_AUTH_POLICY=either`, may still gate human-built splits.
 
 ## Wizard
 
@@ -109,7 +111,7 @@ Creates a `DRAFT`. Req:
 ```json
 { "title": "string", "story": Story, "contentSource": "LINK", "contentUrl": "string?",
   "platforms": ["YOUTUBE"], "payoutMode": "PER_VIEW|HUMAN_SPLIT|POOL_SHARE",
-  "poolShareBasis": "VIEWS  (only used by POOL_SHARE, which shares the pool by CRE-reported views; POOL_SHARE with APPROVED_CLIPS is refused with 400; stored as VIEWS, ignored and stored as null for other modes)",
+  "poolShareBasis": "VIEWS|APPROVED_CLIPS  (required for POOL_SHARE)",
   "approver": "CAMPAIGNER_ONLY|CAMPAIGNER_AND_ADMIN  (required for HUMAN_SPLIT)",
   "poolSize": 1000, "ratePer1k": 2 /* required for PER_VIEW */, "viewTarget": 500000,
   "eligibility": "ANYONE_VERIFIED|HIGHER_RANKED" }
@@ -132,11 +134,11 @@ Records funding (DRAFT -> FUNDED). Req: `{ "txHash": string }` (the createCampai
 Chain mode: loads the receipt and requires a successful `CampaignCreated` from the escrow whose `metadataURI` is this campaign, whose funder is the owner's wallet, whose amount equals `poolSize` and whose mode/approver match; `onchainId`, fees and `highValue` come from the chain. Otherwise 422 `FUND_NOT_VERIFIED`. Replaying the same tx is idempotent.
 
 ### POST /api/campaigns/:id/attest  `[admin]`
-Human confirmation for approving a FUNDED campaign (mandatory when `highValue`). Req: `{ "worldIdProof": <proof as in World ID> }` (full IDKit result or the legacy `{ nullifier_hash, proof, merkle_root?, verification_level?, signal? }`). Verifies a fresh, single-use World ID proof (one per approval) and returns `201 { "attestation": "0x<bytes32>", "proof": { "human", "expiresAt", "signature" } | null, "highValue": boolean, "onchain": { "functionName": "approveCampaign", "args": [onchainId, proof] } | null }`. `proof` is signed by the backend wallet (`HUMAN_ATTESTOR_PRIVATE_KEY`) and is null when the campaign has no `onchainId`. Pass it to the escrow's `approveCampaign(id, proof)`, which checks the signature in the contract. `attestation` is the database record of the approval. Errors: 403 `WORLD_ID_DENIED` (cancelled/expired/invalid; nothing recorded), 409 `PROOF_REUSED` (replayed proof), 409 `BAD_STATE`.
+Human confirmation for approving a FUNDED campaign (mandatory when `highValue`). Req: exactly one of `{ "worldIdProof": { nullifier_hash, proof, merkle_root?, verification_level?, signal? } }` or `{ "stepUpAttemptId": string }` (an authorized `CAMPAIGN_APPROVE` step-up for this campaign, admin only; 400 `PROOF_REQUIRED` otherwise). Verifies a fresh, single-use World ID proof (or consumes the step-up) (one per approval) and returns `201 { "attestation": "0x<bytes32>", "highValue": boolean, "onchain": { "functionName": "approveCampaign", "args": [onchainId, attestation] } | null }`. Pass the attestation to the escrow's `approveCampaign(id, attestation)`; it is stored and emitted on-chain. Errors: 403 `WORLD_ID_DENIED` (cancelled/expired/invalid; nothing recorded), 409 `PROOF_REUSED` (replayed proof), 409 `BAD_STATE`.
 
 ### POST /api/campaigns/:id/approve  `[admin]`
 FUNDED -> APPROVED. Req (optional): `{ "txHash"?: string }`. Res 200: `{ "campaign": Campaign }`.
-Chain mode: the on-chain `approveCampaign` must already have happened (pass its `txHash` to index it immediately), else 409 `CHAIN_STATE_MISMATCH`. High-value campaigns additionally need a recorded `/attest` (428 `HUMAN_CONFIRMATION_REQUIRED` otherwise) and, in chain mode, the escrow must hold a non-zero human attestation for the approval (409 `ATTESTATION_MISMATCH` if it is empty). The route no longer compares the on-chain value with the recorded `attestation`.
+Chain mode: the on-chain `approveCampaign` must already have happened (pass its `txHash` to index it immediately), else 409 `CHAIN_STATE_MISMATCH`. High-value campaigns additionally need a recorded `/attest` (428 `HUMAN_CONFIRMATION_REQUIRED` otherwise) and, in chain mode, the on-chain `approvalAttestation` must equal it (409 `ATTESTATION_MISMATCH`).
 
 ### POST /api/campaigns/:id/reject  `[admin]`
 DRAFT|FUNDED -> REJECTED. Req: `{ "reason": string, "txHash"?: string }`. Res 200: `{ "campaign": Campaign, "refund": { "amount", "includesFee": true, "onchain": boolean } | null }`.
@@ -150,24 +152,20 @@ Campaigner owner/admin: all submissions; creators: only their own.
 Res 200: `{ "submissions": (Submission & { verdict: Verdict|null, creator: {id, wallet} })[] }`
 
 ### POST /api/campaigns/:id/split  `[campaigner owner|admin]`
-HUMAN_SPLIT only, campaign APPROVED, `ESCROW_ADDRESS` required. Called once per approver, each with their OWN fresh human check (one use per check). Two kinds of check:
-- A split the approver built themselves: `worldIdProof` (the full IDKit result or the legacy shape).
-- The agent's split (it matches an agent proposal, with or without `agentProposalId`): `stepUpToken` from the World IdP step-up above. Without it: 403 `STEP_UP_REQUIRED`. With neither check: 400 `HUMAN_CHECK_REQUIRED`.
-
-Req: `{ "splits": [ { "creatorWallet": string, "amount": number } ], "worldIdProof"?: <proof>, "stepUpToken"?: string, "agentProposalId"?: string }`
+HUMAN_SPLIT only, campaign APPROVED. Called once per approver, each with their OWN fresh World ID proof (Agent Pass; one use per proof, PRD 6).
+Req: `{ "splits": [ { "creatorWallet": string, "amount": number } ], "agentProposalId"?: string, "worldIdProof"?: { "nullifier_hash", "proof", "merkle_root"?, "verification_level"?, "signal"? }, "stepUpAttemptId"?: string }` with exactly one of `worldIdProof` / `stepUpAttemptId` (400 `PROOF_REQUIRED`). A split released from an agent proposal needs `stepUpAttemptId` unless `WORLD_AUTH_POLICY=either`: otherwise 428 `STEPUP_REQUIRED`, returned before any other split check.
 Res 201:
 ```json
-{ "payouts": [],                  // always empty here; payouts come from the indexer after SplitFinalized / CreatorCredited
-  "proposal": { "id", "status": "PENDING|AWAITING_CHAIN", "splitHash": "0x..", "twoParty": true,
+{ "payouts": [Payout],            // created only when the approvals are complete (and, in chain mode, never here: see AWAITING_CHAIN)
+  "proposal": { "id", "status": "PENDING|AWAITING_CHAIN|FINALIZED", "splitHash": "0x..", "twoParty": true,
                 "approvals": { "campaigner": true, "admin": false }, "awaiting": ["admin"] },
   "attestation": "0x<bytes32>",
-  "onchain": { "functionName": "approveSplit", "args": { "id": "onchainId", "creators": ["0x.."], "amounts": ["base units"], "proof": { "human", "expiresAt", "signature" } } } | null }
+  "onchain": { "functionName": "approveSplit", "args": { "id": "onchainId", "creators": ["0x.."], "amounts": ["base units"], "attestation": "0x.." } } | null }
 ```
-- The split is canonicalised (wallets lower-cased and sorted, duplicates merged, micro-USDC) and hashed exactly like the contract (`keccak256(abi.encode(creators, amounts))`); "identical split" is therefore order-insensitive. Send `onchain.args` to `approveSplit(id, creators, amounts, proof)` from the approver's wallet. `proof` is signed by the backend wallet after the human check passed; the escrow verifies it. `onchain` is null when the campaign has no `onchainId`.
-- `approver = CAMPAIGNER_AND_ADMIN`: status stays `PENDING` until the campaigner AND an admin each approved the identical split. A different split replaces the pending one (old -> SUPERSEDED) and clears the other approval, as in the contract. `CAMPAIGNER_ONLY`: a single approval completes it (an admin gets 403 `WRONG_APPROVER`).
-- Completion: when all approvals are in, the proposal becomes `AWAITING_CHAIN`. It turns `FINALIZED` when the indexer sees `SplitFinalized` (a `FINALIZED` proposal is no longer listed in `GET /api/campaigns/:id/split` or the admin queue, which list only `PENDING` and `AWAITING_CHAIN`), and payouts are created by the indexer when `SplitFinalized` / `CreatorCredited` are seen. There is no dev path that creates payouts directly.
-- Recipients are checked before the human check: each needs a live approved clip in the campaign and a World ID verification. After the human check passes, the backend wallet links each recipient's wallet to its human on the escrow (`ensureHuman`).
-- Failure paths leave the action undone and do not consume the proof: cancelled/expired/invalid proof -> 403 `WORLD_ID_DENIED`; reused or `"repeated"` proof -> 409 `PROOF_REUSED`; same approver again with the same split -> 409 `ALREADY_APPROVED`; the exact split already complete -> 409 `ALREADY_RELEASED`; split differs from the agent's proposal -> 409 `SPLIT_CHANGED`; expired/replaced proposal -> 410/409 `PROPOSAL_EXPIRED`; revoked agent -> 409 `AGENT_REVOKED`; 400 `EXCEEDS_POOL` (against the net pool); 400 `BAD_RECIPIENT` (no live approved clip, no World ID, or not an address).
+- The split is canonicalised (wallets lower-cased and sorted, duplicates merged, micro-USDC) and hashed exactly like the contract (`keccak256(abi.encode(creators, amounts))`); "identical split" is therefore order-insensitive. Send `onchain.args` to `approveSplit(id, creators, amounts, attestation)` from the approver's wallet.
+- `approver = CAMPAIGNER_AND_ADMIN`: status stays `PENDING` until the campaigner AND an admin each approved the identical split. A different split replaces the pending one (old -> SUPERSEDED) and clears the other approval, as in the contract. `CAMPAIGNER_ONLY`: a single approval finalises.
+- Finalisation: without a chain (dev) payouts are created at once (`FINALIZED`). With a chain the proposal becomes `AWAITING_CHAIN` and payouts are created by the indexer from the on-chain credits when `SplitFinalized` is seen.
+- Failure paths leave the action undone and do not consume the proof: cancelled/expired/invalid proof -> 403 `WORLD_ID_DENIED`; reused or `"repeated"` proof -> 409 `PROOF_REUSED`; same approver again with the same split -> 409 `ALREADY_APPROVED`; 400 `EXCEEDS_POOL` (against the net pool); 400 `BAD_RECIPIENT` (no live approved clip, or not an address in chain mode).
 - Proofs are made unique per approval by hashing `(proof, nullifier_hash, merkle_root)`; real World ID actions must allow repeated verifications (unlimited) because the freshness is enforced here.
 
 ## Channels (ownership proof)
@@ -207,15 +205,12 @@ Res 200: `{ "verdict": Verdict }` (`decidedBy: "HUMAN"`; a pending appeal become
 
 ## Views / settlement feed
 
-### GET /api/snapshots/daily  `[public, read-only]`  (consumed by the Chainlink CRE workflow)
-Frozen feed for one COMPLETED UTC day (default: yesterday). Query: `day=YYYY-MM-DD` for an older day; a bad day or a day that is not over yet is 400 `BAD_REQUEST`. Immutable once the day is over, so every CRE node reads identical bytes. Res 200: `{ "day": "YYYY-MM-DD", "hash": "<sha256 hex of the exact JSON of rows>", "rows": [ { "campaignId": "7", "creator": "0xwallet", "cumulativeViews": 12345 } ] }`. `hash` is also the `ETag` header. `rows` has the same shape and rules as `/latest` below, as of the end of `day`.
-
-### GET /api/snapshots/latest  `[public, read-only]`  (live view, not read by the CRE workflow)
-Current cumulative views, for inspection. The workflow reads `/api/snapshots/daily` above. Res 200 (bare array, not wrapped):
+### GET /api/snapshots/latest  `[public, read-only]`  (consumed by the Chainlink CRE workflow)
+Res 200 (bare array, not wrapped):
 ```json
 [ { "campaignId": "7", "creator": "0xwallet", "cumulativeViews": 12345 } ]
 ```
-`campaignId` is the NUMERIC on-chain escrow id (uint256 as a decimal string), never the internal id. Campaigns without an `onchainId` are skipped. One entry per (on-chain campaign, creator) for APPROVED PER_VIEW and POOL_SHARE campaigns (HUMAN_SPLIT campaigns are not in the feed), summing the latest cumulative views of that creator's approved, live clips; sorted by numeric `campaignId` then `creator`. Contract tests on both sides share `cre/workflows/clippo-settlement/fixtures/snapshot-feed.json` (web: `src/lib/backend.integration.test.ts`; CRE: `cre/workflows/clippo-settlement/snapshot.test.ts`, run `npm test` in `cre/`).
+`campaignId` is the NUMERIC on-chain escrow id (uint256 as a decimal string), never the internal id. Campaigns without an `onchainId` are skipped. One entry per (on-chain campaign, creator) for APPROVED campaigns, summing the latest cumulative views of that creator's approved, live clips; sorted by numeric `campaignId` then `creator`. Contract tests on both sides share `cre/workflows/clippo-settlement/fixtures/snapshot-feed.json` (web: `src/lib/backend.integration.test.ts`; CRE: `cre/workflows/clippo-settlement/snapshot.test.ts`, run `npm test` in `cre/`).
 
 ### GET /api/campaigns/:id/views  `[public for APPROVED/CLOSED; owner/admin otherwise]`
 Daily cumulative views history from `ViewSnapshot` (approved clips; per-clip values carried forward, never decreasing). Res 200: `{ "campaignId", "points": [ { "day": "YYYY-MM-DD", "views": 1800, "dailyViews": 800, "clips": 2 } ], "totalViews": 2800 }`.
@@ -228,7 +223,7 @@ Reads current views and stores one snapshot per approved clip for today (UTC), n
 ## Admin
 
 ### GET /api/admin/queue  `[admin]`
-Res 200: `{ "pendingCampaigns": Campaign[] /* status FUNDED */, "flaggedSubmissions": SubmissionWithVerdict[] /* verdict NEEDS_HUMAN */, "appeals": SubmissionWithVerdict[] /* appealStatus PENDING */, "fraudFlags": FraudFlag[] /* status OPEN */, "splitProposals": SplitProposalView[] /* pending split approvals (PENDING or AWAITING_CHAIN) */ }`
+Res 200: `{ "pendingCampaigns": Campaign[] /* status FUNDED */, "flaggedSubmissions": SubmissionWithVerdict[] /* verdict NEEDS_HUMAN */, "appeals": SubmissionWithVerdict[] /* appealStatus PENDING */, "fraudFlags": FraudFlag[] /* status OPEN */ }`
 where `SubmissionWithVerdict = Submission & { verdict, creator: {id, wallet}, campaign: {id, title, approver} }` and `FraudFlag = { id, kind: "VIEW_ANOMALY"|"CLIP_DELETED", campaignId, submissionId, day, details: { delta, baseline, threshold, ratio, cumulativeViews } | { videoId }, status: "OPEN"|"DISMISSED"|"CONFIRMED", createdAt, resolvedAt, resolvedBy }`.
 
 ### PATCH /api/admin/flags/:id  `[admin]`
@@ -237,18 +232,12 @@ Req: `{ "action": "DISMISS"|"CONFIRM" }`. Res 200: `{ "flag": FraudFlag }`. DISM
 ## Chain
 
 ### GET /api/chain/config  `[public]`
-Res 200: `{ "chain": { "enabled", "chainId", "rpcUrl", "usdc", "escrow": "0x.."|null, "usdcDecimals": 6, "faucetUrl" }, "fees": { "campaignerBps", "creatorBps", "source": "chain"|"config", "retentionDays", "highValueThresholdUsdc" } }`. Fees are per side in bps (max 50), read from the escrow (cached 60 s) with env fallback `PLATFORM_CAMPAIGNER_FEE_BPS`/`PLATFORM_CREATOR_FEE_BPS` (default 25/25).
+Res 200: `{ "chain": { "enabled", "chainId", "rpcUrl", "usdc", "escrow": "0x.."|null, "usdcDecimals": 6 }, "fees": { "campaignerBps", "creatorBps", "source": "chain"|"config", "retentionDays", "highValueThresholdUsdc" } }`. Fees are per side in bps (max 50), read from the escrow (cached 60 s) with env fallback `PLATFORM_CAMPAIGNER_FEE_BPS`/`PLATFORM_CREATOR_FEE_BPS` (default 25/25).
 
 ### POST /api/chain/sync  `[admin, or header x-cron-secret: $CRON_SECRET]`
-Req (optional): `{ "maxBlocks"?: number }`. Indexes new escrow events since the stored cursor (from `ESCROW_DEPLOY_BLOCK`) idempotently (unique on tx hash + log index): `CampaignCreated` (only if it matches a DRAFT campaign: funder wallet, amount, mode, `metadataURI`) -> FUNDED; `CampaignApproved` -> APPROVED; `CampaignRejected` -> REJECTED; `CampaignClosed` -> CLOSED; `CreatorCredited` -> payout credit (+ `releaseAt`); `Claimed` -> payout claimed; `SplitFinalized` -> proposal FINALIZED; `HumanAttested` -> campaign attestation; `DisputeResolved` (upheld only) -> payout reduced by the removed credit. Res 200: `{ "head", "lastBlock", "processed", "applied" }`. 503 `CHAIN_NOT_CONFIGURED` without `ESCROW_ADDRESS`. Run it on a schedule (`GET /api/cron/chain-sync` with the cron secret does this) so credits/claims made outside the UI show up. `GET /api/creator/earnings` also runs a bounded sync (25,000 blocks) before it answers, and ignores a failure.
+Req (optional): `{ "maxBlocks"?: number }`. Indexes new escrow events since the stored cursor (from `ESCROW_DEPLOY_BLOCK`) idempotently (unique on tx hash + log index): `CampaignCreated` (only if it matches a DRAFT campaign: funder wallet, amount, mode, `metadataURI`) -> FUNDED; `CampaignApproved` -> APPROVED; `CampaignRejected` -> REJECTED; `CampaignClosed` -> CLOSED; `CreatorCredited` -> payout credit (+ `releaseAt`); `Claimed` -> payout claimed; `SplitFinalized` -> proposal FINALIZED; `HumanAttested` -> campaign attestation. Res 200: `{ "head", "lastBlock", "processed", "applied" }`. 503 `CHAIN_NOT_CONFIGURED` without `ESCROW_ADDRESS`. Run it on a schedule (cron) so credits/claims made outside the UI show up.
 
-### POST /api/chain/report  `[any signed-in]`
-Req: `{ "txHash": string }`. Rate limit: 60 per hour. Loads the receipt from the chain, applies its escrow events at once, and returns `{ "outcomes": [ { "event": string, "applied": boolean, "reason"?: string } ] }`. The client never states what happened: the receipt is the source. Used by the UI right after a wallet transaction so credits show without waiting for the next sync. Errors: 400 `BAD_TX_HASH`, 404 `TX_NOT_FOUND`, 422 `TX_REVERTED`, 503 `CHAIN_NOT_CONFIGURED`.
-
-### GET /api/chain/disputes  `[campaigner: own campaigns | admin: all]`
-PER_VIEW payouts that are still PENDING and have a `releaseAt` (the retention window), up to 50, newest first. Res 200: `{ "disputes": [ { "payoutId", "campaignId", "title", "onchainId", "creatorWallet", "amount", "releaseAt", "open": boolean, "resolveBy": ISO|null } ] }`. `open` and `resolveBy` are read from the escrow's `disputes(id, creator)` mapping, never from the database. The dispute itself is raised and settled by wallet calls to the escrow (`disputeCredits`, `resolveDispute`; helpers below), not through this API. 503 `NOT_CONFIGURED` without `ESCROW_ADDRESS`. The UI for this exists; it has not run against a deployed enforcing escrow.
-
-Client helpers for the UI: `src/lib/chain/client.ts` (`getChainConfig`, `connectWallet`, `signIn`, `previewFund`, `fundCampaign` = USDC approve + `createCampaign` + `POST /fund`, `previewClaim`, `claimPayout`, `approveCampaignOnchain`, `rejectCampaignOnchain`, `closeCampaignOnchain`, `approveSplit`, `listChainDisputes`, `disputeCredits`, `resolveDispute`). Typed bindings: `src/lib/chain/escrow-abi.ts` (generated from `contracts/abi/ClippoEscrow.json` by `npm run abi:sync`).
+Client helpers for the UI: `src/lib/chain/client.ts` (`getChainConfig`, `connectWallet`, `signIn`, `previewFund`, `fundCampaign` = USDC approve + `createCampaign` + `POST /fund`, `previewClaim`, `claimPayout`, `approveCampaignOnchain`, `rejectCampaignOnchain`, `closeCampaignOnchain`, `approveSplit`). Typed bindings: `src/lib/chain/escrow-abi.ts` (generated from `contracts/abi/ClippoEscrow.json` by `npm run abi:sync`).
 
 ## Creator
 
@@ -260,13 +249,13 @@ Res 200:
   "totals": { "estimated": 12.5, "estimatedNet": 12.47, "claimable": 0, "claimed": 0, "frozen": 0 },
   "fees": { "creatorBps": 25, "source": "chain", "retentionDays": 7 } }
 ```
-`estimatedEarnings` is gross (null for HUMAN_SPLIT: depends on the approved split); `estimatedNet` is after the creator-side platform fee (campaign snapshot bps, else current). PER_VIEW = views/1000 x rate, scaled down if the usable pool (pool minus campaigner fee) would be exceeded; POOL_SHARE = usable pool x share of views (an estimate; older rows with an APPROVED_CLIPS basis are estimated by approved clips, but new campaigns are always VIEWS). Deleted clips earn nothing. `totals.claimable` is gross, unfrozen and unclaimed (PER_VIEW credits are claimable only after `payout.releaseAt`, the 7-day retention window); `frozen` is balance held back by anti-fraud review.
+`estimatedEarnings` is gross (null for HUMAN_SPLIT: depends on the approved split); `estimatedNet` is after the creator-side platform fee (campaign snapshot bps, else current). PER_VIEW = views/1000 x rate, scaled down if the usable pool (pool minus campaigner fee) would be exceeded; POOL_SHARE = usable pool x share of views (or approved clips). Deleted clips earn nothing. `totals.claimable` is gross, unfrozen and unclaimed (PER_VIEW credits are claimable only after `payout.releaseAt`, the 7-day retention window); `frozen` is balance held back by anti-fraud review.
 
 ### GET /api/payouts/:id/claim  `[creator owner]`  (claim preview)
-Res 200: `{ "payout": Payout, "preview": { "gross", "creatorFeeBps", "fee", "net" }, "claimable": boolean, "frozen": boolean, "frozenReason": string|null, "releaseAt": string|null, "retentionDays": number, "chain": PublicChainConfig, "onchain": { "functionName": "claimFor", "args": [onchainId, creatorWallet] } | null }`. `gross` is the outstanding amount (`amount - claimedAmount`); the creator-side fee is deducted on-chain at claim time. The creator does not have to send the transaction: `POST` below makes the backend wallet call `claimFor`. `claimable` is false while frozen, inside the retention window, or already claimed.
+Res 200: `{ "payout": Payout, "preview": { "gross", "creatorFeeBps", "fee", "net" }, "claimable": boolean, "frozen": boolean, "frozenReason": string|null, "releaseAt": string|null, "retentionDays": number, "chain": PublicChainConfig, "onchain": { "functionName": "claim", "args": [onchainId] } | null }`. `gross` is the outstanding amount (`amount - claimedAmount`); the creator-side fee is deducted on-chain at claim time. `claimable` is false while frozen, inside the retention window, or already claimed.
 
 ### POST /api/payouts/:id/claim  `[creator owner]`
-Sends and records a claim. Req (optional): `{ "txHash"?: string }`. Without `txHash`, the backend wallet (`HUMAN_ATTESTOR_PRIVATE_KEY`, pays the gas) calls the escrow's `claimFor(onchainId, creatorWallet)`; the contract can only send the money to that creator. A creator who claimed from their own wallet passes the `txHash` instead. Res 200: `{ "payout": Payout, "verified": true, "txHash": string }`. Needs a World ID verified creator (403 `NOT_VERIFIED`). 409 `NOT_FUNDED_ONCHAIN` (campaign has no on-chain id), 409 `NOTHING_CLAIMABLE` (nothing matured yet, or under dispute).
+Records a claim. Req: `{ "txHash": string }` (required; verified against a `Claimed` event). Res 200: `{ "payout": Payout, "verified": true }`.
 Chain mode: the receipt must be successful and contain a `Claimed` event from the escrow for this payout's campaign and the signed-in creator's wallet; amounts come from the event (the indexer applies it oldest payout first), otherwise 422 `CLAIM_NOT_VERIFIED`. 409 `PAYOUT_FROZEN` (deleted clip / fraud review), 409 `BAD_STATE` if already claimed.
 
 ---
@@ -279,13 +268,13 @@ There are NO mock modes. Each integration is real; if its credentials are missin
 | --- | --- | --- |
 | Postgres (Neon) | `DATABASE_URL` | Prisma `postgresql`; `npx prisma migrate deploy`. Tests run on a throwaway Postgres (PGlite) automatically. |
 | World ID 4.0 | `WORLD_ID_APP_ID`, `WORLD_ID_RP_ID`, `WORLD_ID_SIGNING_KEY` | see World ID |
-| World IdP step-up | `WORLD_IDP_CLIENT_ID`, `WORLD_IDP_CLIENT_SECRET`, `WORLD_IDP_REDIRECT_URI` | agent's split only; not run against the real issuer, see World ID |
+| World auth step-up | `WORLD_AUTH_CLIENT_ID`, `WORLD_AUTH_CLIENT_SECRET`, `WORLD_AUTH_ISSUER`, `WORLD_AUTH_REDIRECT_URI`, `WORLD_AUTH_TOKEN_AUTH`, `WORLD_AUTH_ACR`, `WORLD_AUTH_POLICY` | see World auth step-up |
 | YouTube | `YOUTUBE_API_KEY` | Data API v3 for metadata/views/availability; captions read from the public caption track (null -> NEEDS_HUMAN) |
 | X | `X_BEARER_TOKEN` | API v2; no audio -> human review |
 | Instagram | `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET`, `INSTAGRAM_REDIRECT_URI` | creator OAuth, see Instagram |
-| AI | `LLM_PROVIDER` (`anthropic` or `gemini`), `ANTHROPIC_API_KEY` (`ANTHROPIC_MODEL`) or `GEMINI_API_KEY` (`GEMINI_TEXT_MODEL`) | verifier, campaign writer, assistants. `LLM_PROVIDER` wins, else the only key set, else Anthropic if both. Neither key: 503 `NOT_CONFIGURED` (`src/lib/ai/llm.ts`) |
+| AI | `ANTHROPIC_API_KEY` (`ANTHROPIC_MODEL`) | verifier, campaign writer, assistants |
 | AI video | `GEMINI_API_KEY` (or `VIDEO_GEN_PROVIDER=http` + `VIDEO_GEN_URL`) | 503 NOT_CONFIGURED |
-| Chain | `ESCROW_ADDRESS`, `HUMAN_ATTESTOR_PRIVATE_KEY`, `ARC_RPC_URL`, `ARC_CHAIN_ID`, `USDC_ADDRESS` | fund/claim/approve/reject/close/split verify receipts and escrow state; no mirrored mode (503 without `ESCROW_ADDRESS`) |
+| Chain | `ESCROW_ADDRESS`, `ARC_RPC_URL`, `ARC_CHAIN_ID`, `USDC_ADDRESS` | fund/claim/approve/reject/close/split verify receipts and escrow state; no mirrored mode (503 without `ESCROW_ADDRESS`) |
 | Profile / freeze signer | `UPDATER_PRIVATE_KEY`, `PROFILE_ADDRESS`, `REFERRAL_ADDRESS` | see Optional modules |
 | On-ramp | `TRANSAK_API_KEY`, `TRANSAK_API_SECRET` | see On-ramp |
 | Sign-in | wallet signature (SIWE) | dev bypass (`wallet` without signature, `x-wallet` header) only when `NODE_ENV != production` |
@@ -321,7 +310,7 @@ _Signer:_ `POST /api/creator/onchain-profile/sync` writes `ClippoCreatorProfile.
 Non-transferable profile (`ClippoCreatorProfile`); no tradable token.
 - `GET /api/creator/onchain-profile` `[creator]` Res `{ profile, preview: { tier, approvedClips, rejectedClips, totalViews, totalEarnedUsdc } }`
 - `POST /api/creator/onchain-profile` `[creator]` Req `{ optIn: boolean }`. Res `{ profile }`
-- `POST /api/creator/onchain-profile/sync` `[admin/cron]` Computes payloads for opted-in creators and records changes and writes `updateProfile` on-chain through `lib/modules/profile.ts#syncProfiles`, signed with `UPDATER_PRIVATE_KEY` (503 `NOT_CONFIGURED` without it or `PROFILE_ADDRESS`). Res `{ checked, changed, skipped }`. Tier is published only if the status ladder flag is also on.
+- `POST /api/creator/onchain-profile/sync` `[admin/cron]` Computes payloads for opted-in creators and records changes (the on-chain `updateProfile` write is a hook in `lib/modules/profile.ts#syncProfiles`, not wired to a signer here). Res `{ checked, changed }`. Tier is published only if the status ladder flag is also on.
 
 
 ---
@@ -408,7 +397,7 @@ Tracking is populated after funding (clips submitted to the hire's campaign).
 The same `HireView` (no token) for sharing between campaigner and creators. Share URL token = the campaigner's `hire.shareToken`.
 
 ### POST /api/hires/:id/fund  `[campaigner owner]`  ("fund all")
-No body. A client-supplied `onchainId` or `txHash` is no longer accepted: a campaign becomes FUNDED only from a verified on-chain event (commit dfd0d51). Requires a brief (409 `BRIEF_REQUIRED`) and at least one approved creator (409 `NO_APPROVED_CREATORS`); only once (409 `BAD_STATE`). Creates ONE campaign mapped to **HUMAN_SPLIT**:
+Optional body `{ onchainId?, txHash? }`. Requires a brief (409 `BRIEF_REQUIRED`) and at least one approved creator (409 `NO_APPROVED_CREATORS`); only once (409 `BAD_STATE`). Creates ONE campaign mapped to **HUMAN_SPLIT**:
 
 | Campaign field | Value |
 | --- | --- |
@@ -416,13 +405,13 @@ No body. A client-supplied `onchainId` or `txHash` is no longer accepted: a camp
 | `poolSize` | sum of APPROVED creators' `amount` (the preset amounts) |
 | `story`, `platforms`, `title` | from the brief / hire |
 | `eligibility` | `ANYONE_VERIFIED`, but submissions are restricted to the hire's APPROVED creators (403 `NOT_HIRED`) |
-| `status` | `DRAFT` (becomes FUNDED through `POST /api/campaigns/:id/fund` with the createCampaign `txHash`) |
+| `status` | `DRAFT`, or `FUNDED` if `onchainId` was supplied |
 
 Res 201: `{ campaign, hire: {id,status,campaignId}, fundingIntent: { campaignId, currency: "USDC", poolSize, payoutMode, presetSplits: [{creatorWallet, amount}], next } }`.
-Flow: escrow `poolSize` on-chain -> `POST /api/campaigns/:id/fund` with the `txHash` -> admin approve -> approved creators submit clips -> split.
+Flow: escrow `poolSize` on-chain -> `POST /api/campaigns/:id/fund` (unless `onchainId` was given) -> admin approve -> approved creators submit clips -> split.
 
 ### GET /api/hires/:id/split-preset  `[campaigner owner | admin]`
-Res: `{ campaignId, splits: [{creatorWallet, amount}], waiting: [{creatorWallet, amount, reason}] }`. `splits` = preset amounts of approved creators who now have an approved clip and no payout yet; send them as `splits` to `POST /api/campaigns/:id/split` together with a human check (`worldIdProof` or `stepUpToken`) (that endpoint enforces `BAD_RECIPIENT`/`EXCEEDS_POOL`).
+Res: `{ campaignId, splits: [{creatorWallet, amount}], waiting: [{creatorWallet, amount, reason}] }`. `splits` = preset amounts of approved creators who now have an approved clip and no payout yet; send them as `splits` to `POST /api/campaigns/:id/split` together with a World ID proof (that endpoint enforces `BAD_RECIPIENT`/`EXCEEDS_POOL`).
 
 ### GET /api/campaigns/:id/eligibility  `[creator]`
 Res: `{ eligible, reasons: ("NOT_VERIFIED"|"NOT_ELIGIBLE"|"NOT_HIRED")[], rule, requiredTier: "RISING"|null, creatorTier, restrictedToHiredCreators }`.
@@ -490,7 +479,7 @@ Job shape: `{ id, status: "queued"|"rendering"|"ready"|"failed"|"approved", prog
 - **Launch gate:** `POST /api/campaigns/:id/approve` on a campaign with `contentSource = AI_GENERATED` returns 409 `SOURCE_NOT_READY` / `RIGHTS_NOT_CONFIRMED` / `SOURCE_NOT_APPROVED` until the rights confirmation and the campaigner's approval exist (`assertSourceReadyForLaunch` in `src/lib/source.ts`). The chain path enforces it too: when the indexer sees an on-chain `CampaignApproved` for a campaign whose source is not ready, the campaign stays FUNDED, `adminReviewReason` is set and admins are notified (`LAUNCH_GATE`); `POST /api/campaigns/:id/approve` clears it once the source is ready.
 
 ## Agent assistants (advice only)
-Model: Claude or Gemini (per `LLM_PROVIDER`) through `llm.ts` (`task: "assist"`). Every assistant computes a deterministic answer first and merges validated model fields over it, so a failed or malformed model answer still yields the same shape. Responses may include `aiMode: "real"`; no configured LLM key (`ANTHROPIC_API_KEY` or `GEMINI_API_KEY`) is a 503 `NOT_CONFIGURED`. **Guardrail: no assistant code path can release funds.** Agent modules are pure (no DB/chain), assistant routes never write payouts, a negotiated rate never moves money, and `src/lib/agents/guardrail.test.ts` fails if that changes.
+Model: Claude through `llm.ts` (`task: "assist"`). Every assistant computes a deterministic answer first and merges validated model fields over it, so a failed or malformed model answer still yields the same shape. Responses may include `aiMode: "real"`; a missing `ANTHROPIC_API_KEY` is a 503 `NOT_CONFIGURED`. **Guardrail: no assistant code path can release funds.** Agent modules are pure (no DB/chain), assistant routes never write payouts, a negotiated rate never moves money, and `src/lib/agents/guardrail.test.ts` fails if that changes.
 
 Creator `[creator]`
 - `POST /api/assistant/creator/explain` `{ campaignId }` -> `{ explanation: { plain, doList[], avoidList[], label } }`
@@ -530,7 +519,7 @@ States: `stage` `CAMPAIGNER` | `ADMIN`; `status` `OPEN` | `UPHELD` | `OVERTURNED
 | X | `X_BEARER_TOKEN` | 503 NOT_CONFIGURED |
 | Instagram | `INSTAGRAM_APP_ID` + `INSTAGRAM_APP_SECRET` + `INSTAGRAM_REDIRECT_URI` | 503 NOT_CONFIGURED (OAuth start) |
 | AI video | `GEMINI_API_KEY` (or `VIDEO_GEN_PROVIDER=http` + `VIDEO_GEN_URL`) | 503 NOT_CONFIGURED |
-| Assistants / AEO | `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` (see `LLM_PROVIDER`) | 503 NOT_CONFIGURED |
+| Assistants / AEO | `ANTHROPIC_API_KEY` | 503 NOT_CONFIGURED |
 | Storage | `STORAGE_DIR` (default `web/storage`), `SOURCE_MAX_BYTES` | local disk |
 <!-- END: PLATFORMS, SOURCE CONTENT, AI VIDEO, AGENT ASSISTANTS, APPEALS -->
 

@@ -21,7 +21,7 @@ async function ping(group, name, fn, required = true) {
   }
 }
 const rpc = async (method, params = []) => {
-  const r = await fetch(env("ARC_RPC_URL") || "https://rpc.testnet.arc.network", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }), signal: timeout() });
+  const r = await fetch(env("ARC_RPC_URL") || "https://rpc.testnet.arc.io", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }), signal: timeout() });
   const j = await r.json();
   if (j.error) throw new Error(j.error.message);
   return j.result;
@@ -32,6 +32,7 @@ has("core", "DATABASE_URL", true, "Neon/Postgres connection string");
 if (env("DATABASE_URL") && !/^postgres(ql)?:\/\//.test(env("DATABASE_URL"))) add("core", "DATABASE_URL shape", "FAIL", "must start with postgresql://");
 has("core", "SESSION_SECRET", true, "long random string");
 has("core", "ADMIN_WALLETS", true, "comma-separated admin wallet addresses");
+if (/0xAdmin0+1\b/i.test(env("ADMIN_WALLETS"))) add("core", "ADMIN_WALLETS placeholder", "FAIL", "still the .env.example placeholder; set real admin wallet addresses");
 has("core", "CRON_SECRET", false, "needed for cron/CRE calling POST /api/snapshots/refresh");
 if (env("DATABASE_URL")) {
   await ping("core", "database ping", async () => {
@@ -55,7 +56,7 @@ await ping("core", "STORAGE_DIR writable", async () => {
 }, false);
 
 // ---- chain
-has("chain", "ARC_RPC_URL", false, "default https://rpc.testnet.arc.network");
+has("chain", "ARC_RPC_URL", false, "default https://rpc.testnet.arc.io");
 has("chain", "ESCROW_ADDRESS", true, "deploy contracts first (contracts/README.md)");
 has("chain", "ESCROW_DEPLOY_BLOCK", false, "block of the escrow deployment (faster indexing)");
 await ping("chain", "RPC eth_chainId", async () => {
@@ -99,6 +100,25 @@ if (widOk) {
     if (r.status === 404) throw new Error("rp_id not found (404)");
     return `portal answered ${r.status} (4xx is expected for an empty proof)`;
   });
+}
+
+// ---- World auth (auth.world.org step-up, Agent Pass). Implemented in code; not yet run live.
+const waOk = [has("world-auth", "WORLD_AUTH_CLIENT_ID", false, "auth.world.org client id (step-up gate off until set)"), has("world-auth", "WORLD_AUTH_CLIENT_SECRET", false), has("world-auth", "WORLD_AUTH_ISSUER", false, "e.g. https://sandbox.auth.world.org"), has("world-auth", "WORLD_AUTH_REDIRECT_URI", false, "exact HTTPS URL, .../api/auth/world/callback")].every(Boolean);
+has("world-auth", "WORLD_AUTH_TOKEN_AUTH", false);
+has("world-auth", "WORLD_AUTH_ACR", false);
+has("world-auth", "WORLD_AUTH_POLICY", false, "agent-required | either | required");
+if (env("WORLD_AUTH_POLICY") && !["agent-required", "either", "required"].includes(env("WORLD_AUTH_POLICY"))) add("world-auth", "WORLD_AUTH_POLICY value", "FAIL", "must be agent-required, either or required", false);
+if (env("WORLD_AUTH_REDIRECT_URI") && !/^https:\/\//.test(env("WORLD_AUTH_REDIRECT_URI"))) add("world-auth", "WORLD_AUTH_REDIRECT_URI shape", "FAIL", "must be an exact HTTPS URL (localhost http is likely unsupported; use a tunnel or the deployed URL)", false);
+if (waOk) {
+  await ping("world-auth", "issuer discovery", async () => {
+    const iss = env("WORLD_AUTH_ISSUER").replace(/\/+$/, "");
+    const r = await fetch(`${iss}/.well-known/openid-configuration`, { signal: timeout() });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    if (d.issuer && d.issuer.replace(/\/+$/, "") !== iss) throw new Error(`discovery issuer ${d.issuer} != WORLD_AUTH_ISSUER`);
+    const pkce = Array.isArray(d.code_challenge_methods_supported) ? (d.code_challenge_methods_supported.includes("S256") ? "S256 supported" : "S256 NOT listed") : "PKCE methods not listed";
+    return `reachable; ${pkce}; acr values: ${(d.acr_values_supported ?? []).join(", ") || "not listed"}`;
+  }, false);
 }
 
 // ---- AI / platforms

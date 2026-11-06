@@ -1,18 +1,22 @@
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
-import { chainMode } from "@/lib/chain/guards";
-import { attestationHash, isValidSplitWallets, normalizeSplit, onchainSplitArgs, splitHash } from "@/lib/chain/split";
+import { attestationHash, normalizeSplit, onchainSplitArgs, splitHash } from "@/lib/chain/split";
 import { db } from "@/lib/db";
 import { canManageCampaign, getCampaign, proofSchema, type Ctx } from "@/lib/domain";
 import { ApiError, ok, readJson, route } from "@/lib/http";
 import { checkFreshProof, consumeProof } from "@/lib/worldid/fresh";
+import { prepareSplitApproval } from "@/lib/splitapproval";
+import { worldAuthConfig } from "@/lib/worldauth/config";
+import { consumeStepUp, peekStepUp, stepUpError } from "@/lib/worldauth/stepup";
 import { pendingProposals } from "@/lib/proposals";
 import { classifyRefusal, recordAudit } from "@/lib/agentpass/audit";
 
 const body = z.object({
   splits: z.array(z.object({ creatorWallet: z.string().min(1), amount: z.number().positive() })).min(1),
   /** Fresh World ID (Agent Pass) proof for THIS approver's approval. One use only. */
-  worldIdProof: proofSchema,
+  worldIdProof: proofSchema.optional(),
+  /** auth.world.org step-up attempt (World ID Agent Pass) completed for THIS approver and this exact split. Single use. */
+  stepUpAttemptId: z.string().min(1).optional(),
   /** Agent Pass: the agent's proposal this approval is for. The split must hash-match it. */
   agentProposalId: z.string().optional(),
 });
@@ -44,6 +48,15 @@ export const POST = route(async (req: Request, ctx: Ctx) => {
   }
 });
 
+/** Step-up policy; an unconfigured provider falls back to the default so IDKit-only deployments keep working. */
+function currentPolicy() {
+  try {
+    return worldAuthConfig().policy;
+  } catch {
+    return "agent-required" as const;
+  }
+}
+
 type AuditCtx = { campaignId?: string; audit?: boolean; proposalId?: string; actorId?: string; role?: "CAMPAIGNER" | "ADMIN"; hash?: string };
 
 async function approve(req: Request, { params }: Ctx, info: AuditCtx): Promise<Response> {
@@ -58,62 +71,37 @@ async function approve(req: Request, { params }: Ctx, info: AuditCtx): Promise<R
   if (c.status !== "APPROVED") throw new ApiError(409, "BAD_STATE", `Campaign is ${c.status}, expected APPROVED`);
   const v = body.parse(await readJson(req));
   info.proposalId = v.agentProposalId;
-  const mode = chainMode();
+  // Exactly one proof source: an IDKit proof or a completed auth.world.org step-up attempt.
+  if (!!v.worldIdProof === !!v.stepUpAttemptId) throw new ApiError(400, "PROOF_REQUIRED", "Send exactly one of worldIdProof or stepUpAttemptId");
+  info.hash = splitHash(normalizeSplit(v.splits));
+  // Policy: an agent's proposal is released only through the step-up (an IDKit proof alone is refused) unless policy is "either".
+  const policy = currentPolicy();
+  const stepUpNeeded = policy === "required" || (!!v.agentProposalId && policy !== "either");
+  if (stepUpNeeded && !v.stepUpAttemptId) throw stepUpError("STEPUP_REQUIRED", "Releasing this split needs a World ID step-up. Complete it, then approve again.");
 
-  const split = normalizeSplit(v.splits);
-  if (mode === "chain" && !isValidSplitWallets(split)) throw new ApiError(400, "BAD_RECIPIENT", "Recipients must be valid 0x wallet addresses");
-  const usablePool = c.grossFunded != null ? c.grossFunded - (c.campaignerFee ?? 0) : c.poolSize;
-  const total = split.reduce((n, s) => n + s.amount, 0);
-  const existing = await db.payout.aggregate({ where: { campaignId: c.id }, _sum: { amount: true } });
-  if (total + (existing._sum.amount ?? 0) > usablePool + 1e-9) {
-    throw new ApiError(400, "EXCEEDS_POOL", "Splits exceed the campaign pool");
-  }
-  const creators = await db.user.findMany({
-    where: { wallet: { in: split.map((s) => s.creatorWallet) } },
-    include: { submissions: { where: { campaignId: c.id, clipStatus: "LIVE", verdict: { result: "APPROVE" } }, select: { id: true } } },
-  });
-  for (const s of split) {
-    const cr = creators.find((x) => x.wallet === s.creatorWallet);
-    if (!cr || cr.submissions.length === 0) throw new ApiError(400, "BAD_RECIPIENT", `${s.creatorWallet} has no approved clip in this campaign`);
-  }
-
-  const role = info.role!;
-  const twoParty = c.approver === "CAMPAIGNER_AND_ADMIN";
-  const hash = splitHash(split);
+  const { split, hash, role, twoParty, agentProposal } = await prepareSplitApproval(user, c, { splits: v.splits, agentProposalId: v.agentProposalId });
   info.hash = hash;
+  const bind = { userId: user.id, campaignId: c.id, splitHash: hash, role };
 
-  // Cheap pre-checks that never touch the proof (each leaves everything undone).
-  // 1. Wrong approver: with a single approver (the campaigner) an admin cannot stand in.
-  if (!twoParty && role !== "CAMPAIGNER") throw new ApiError(403, "WRONG_APPROVER", "This campaign is approved by the campaigner only");
-  // 2. Agent Pass: the split must be the agent's proposal, unexpired, from a still-delegated agent, byte-for-byte (hash).
-  let agentProposal: Awaited<ReturnType<typeof db.agentProposal.findUnique>> = null;
-  if (v.agentProposalId) {
-    agentProposal = await db.agentProposal.findUnique({ where: { id: v.agentProposalId } });
-    if (!agentProposal || agentProposal.campaignId !== c.id) throw new ApiError(404, "PROPOSAL_NOT_FOUND", "No such agent proposal for this campaign");
-    const agent = await db.agentIdentity.findUnique({ where: { id: agentProposal.agentId } });
-    if (!agent || agent.status !== "ACTIVE") throw new ApiError(409, "AGENT_REVOKED", "The agent that made this proposal is no longer delegated to the campaign");
-    if (agentProposal.expiresAt.getTime() < Date.now()) {
-      if (agentProposal.status === "PROPOSED") await db.agentProposal.update({ where: { id: agentProposal.id }, data: { status: "EXPIRED" } });
-      throw new ApiError(410, "PROPOSAL_EXPIRED", "The agent's proposal expired. Ask the agent for a fresh proposal.");
-    }
-    if (agentProposal.splitHash !== hash) throw new ApiError(409, "SPLIT_CHANGED", "This split is not what the agent proposed (hash mismatch). Approve the agent's exact proposal.");
-    if (agentProposal.status === "SUPERSEDED" || agentProposal.status === "EXPIRED") throw new ApiError(409, "PROPOSAL_EXPIRED", "That agent proposal was replaced by a newer one");
+  let proofHash = "";
+  let nullifier = "";
+  let gate: "stepup" | "idkit" = "idkit";
+  if (v.stepUpAttemptId) {
+    gate = "stepup";
+    await peekStepUp(v.stepUpAttemptId, bind); // cheap failure; the real single-use consume happens in the transaction
+  } else {
+    ({ proofHash, nullifier } = await checkFreshProof(v.worldIdProof!, SPLIT_ACTION, `split:${c.id}:${hash}`));
   }
-  // 3. Already released (approvals complete, waiting on or confirmed by the chain).
-  const released = await db.splitProposal.findFirst({ where: { campaignId: c.id, splitHash: hash, status: { in: ["AWAITING_CHAIN", "FINALIZED"] } } });
-  if (released) throw new ApiError(409, "ALREADY_RELEASED", "This exact split was already approved by everyone and sent to the escrow");
-  // 4. Same approver re-approving the same pending split.
-  const active = await db.splitProposal.findFirst({ where: { campaignId: c.id, status: { in: ["PENDING", "AWAITING_CHAIN"] } }, orderBy: { createdAt: "desc" } });
-  if (active && active.splitHash === hash) {
-    const done = role === "CAMPAIGNER" ? active.campaignerApprovedAt : active.adminApprovedAt;
-    if (done) throw new ApiError(409, "ALREADY_APPROVED", `The ${role.toLowerCase()} already approved this exact split`);
-  }
-
-  const { proofHash, nullifier } = await checkFreshProof(v.worldIdProof, SPLIT_ACTION, `split:${c.id}:${hash}`);
-  const attestation = attestationHash({ kind: "SPLIT", campaignKey: c.onchainId ?? c.id, wallet: user.wallet, nullifier, proofHash, splitHash: hash });
+  let attestation = v.stepUpAttemptId ? "" : attestationHash({ kind: "SPLIT", campaignKey: c.onchainId ?? c.id, wallet: user.wallet, nullifier, proofHash, splitHash: hash });
 
   const result = await db.$transaction(async (tx) => {
-    await consumeProof(tx, user, proofHash, SPLIT_ACTION);
+    if (v.stepUpAttemptId) {
+      ({ proofHash, nullifier } = await consumeStepUp(tx, v.stepUpAttemptId, bind));
+      attestation = attestationHash({ kind: "SPLIT", campaignKey: c.onchainId ?? c.id, wallet: user.wallet, nullifier, proofHash, splitHash: hash });
+      await consumeProof(tx, user, proofHash, "stepup:split");
+    } else {
+      await consumeProof(tx, user, proofHash, SPLIT_ACTION);
+    }
     await tx.humanAttestation.create({ data: { campaignId: c.id, userId: user.id, kind: "SPLIT", splitHash: hash, attestation, proofHash } });
 
     let proposal = await tx.splitProposal.findFirst({ where: { campaignId: c.id, status: { in: ["PENDING", "AWAITING_CHAIN"] } }, orderBy: { createdAt: "desc" } });
@@ -152,7 +140,7 @@ async function approve(req: Request, { params }: Ctx, info: AuditCtx): Promise<R
     actorRole: role,
     event: "APPROVED",
     outcome: "OK",
-    detail: `${role === "CAMPAIGNER" ? "Campaigner" : "Admin"} approved ${agentProposal ? "the agent's proposal" : "a human-built split"} with a fresh World ID proof (valid, single use). ${result.proposal.status === "AWAITING_CHAIN" ? "All approvals are in; waiting for the escrow to confirm." : "Waiting for the other approver."}`,
+    detail: `${role === "CAMPAIGNER" ? "Campaigner" : "Admin"} approved ${agentProposal ? "the agent's proposal" : "a human-built split"} with ${gate === "stepup" ? "a step-up via auth.world.org (acr orb, fresh)" : "a fresh World ID proof (valid, single use)"}. ${result.proposal.status === "AWAITING_CHAIN" ? "All approvals are in; waiting for the escrow to confirm." : "Waiting for the other approver."}`,
     splitHash: hash,
     proofStatus: "VALID",
   });
@@ -174,6 +162,7 @@ async function approve(req: Request, { params }: Ctx, info: AuditCtx): Promise<R
         ],
       },
       attestation,
+      gate,
       onchain: c.onchainId
         ? { functionName: "approveSplit", args: { id: c.onchainId, ...onchainSplitArgs(split), attestation } }
         : null,

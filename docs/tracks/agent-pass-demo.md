@@ -1,64 +1,39 @@
-# World Agent Pass: demo clicks
+# World ID Agent Pass: demo clicks
 
-Status: a script only. It has not been recorded. The step-up path (auth.world.org) has never been run in a browser, and the checks below
-describe what the code does, not what a run showed.
+STATUS: scripted, not yet recorded. The flow below is implemented in code and has NOT been run live. Say so in the video for anything not shown running.
 
-This file is the full test list, far longer than the video. The submission video gives Agent Pass 30 s and uses the cut-down version in `docs/DEMO_SCRIPT.md`
-(which also owns the video rule: 2 to 4 minutes, hard cap 4:00). Pick the few rows to film from there, not from here.
+Identities: sandbox identities (sandbox.auth.world.org, World ID Sandbox) are FAKE and not for production. Say this on camera.
 
-## Setup
+Setup (TODO): `WORLD_AUTH_CLIENT_ID`, `WORLD_AUTH_CLIENT_SECRET`, `WORLD_AUTH_ISSUER` (sandbox), `WORLD_AUTH_REDIRECT_URI` (exact HTTPS URL, e.g. a tunnel or the deployed host; localhost http is likely unsupported), `WORLD_AUTH_TOKEN_AUTH`, `WORLD_AUTH_ACR`, `WORLD_AUTH_POLICY=agent-required` (also the fallback when `WORLD_AUTH_*` is unset, in which case agent proposals cannot be released). Each approver must first be IDKit-verified (sign-up): the first step-up enrolls their World identity only for a verified user. Run `npm run doctor`. Proposer: `AGENT_PASS_DEMO=1` (labelled demo) or a registered `AGENT_PASS_PRIVATE_KEY`. An LLM key for "Ask Claude to propose".
 
-Two builds behave differently:
-
-- **Real step-up build** (no `NEXT_PUBLIC_DEMO`): needs `WORLD_IDP_CLIENT_ID`, `WORLD_IDP_CLIENT_SECRET`, `WORLD_IDP_REDIRECT_URI` (HTTPS, exactly the callback
-  registered in the auth.world.org portal, `<site>/api/agentpass/stepup/callback`), and `SESSION_SECRET` of at least 32 characters in production. Optional:
-  `WORLD_IDP_ISSUER`, `WORLD_IDP_TOKEN_AUTH_METHOD`, `WORLD_IDP_ACR_VALUES`. Without them `POST /api/agentpass/stepup/start` answers 503 NOT_CONFIGURED and nothing changes.
-  Open the app on the same origin as the redirect URI. A local run needs an HTTPS tunnel.
-- **Demo build** (`NEXT_PUBLIC_DEMO=1`): approving shows a local sheet with fake outcomes ("Verify as a unique human", Cancel, "Let it expire",
-  "Reuse an old proof"). It never calls the issuer, so it does not show the Agent Pass step-up. Do not present it as one. Never record with `NEXT_PUBLIC_DEMO=1` (rule in `docs/DEMO_SCRIPT.md`).
-
-The agent: set `AGENT_PASS_PRIVATE_KEY` and register its address (`npx @worldcoin/agentkit-cli register <address>`, not done yet), or for a
-screen-only run set `AGENT_PASS_DEMO=1` (fake human, labelled "demo"). The AI proposer needs `ANTHROPIC_API_KEY` or `GEMINI_API_KEY`.
-
-On-chain: the desk then asks the approver's wallet to send `approveSplit`. The contract that enforces the approval (commit 498f649) is not deployed. The live site's
-escrow (`0xd8453c22996bea11598a3dbf05112675b945c39c`, per `/api/chain/config`) is an older design. The on-chain step is not proven on real Arc.
-
-Prepare: an APPROVED human-split campaign (payout mode HUMAN_SPLIT) with the approver set to "me and admin" and at least one approved, live clip whose creator
-has verified with World ID. Open the campaign desk as the campaigner (and the bench as an admin in a second window).
+Prepare: a LIVE human-split campaign (approver "me and admin" for two-party), at least one approved clip. Desk as campaigner; bench as admin in a second window.
 
 ## Happy path
 
-1. Desk, campaign row: click **Ask the AI to propose** (needs an AI key; without one you get 503 NOT_CONFIGURED, and **Propose without AI (pro rata by clips)** is the non-AI option). The agent is delegated (AgentBook check) and proposes. A message says nothing is payable yet.
-2. Scroll to **Agent Pass activity**: the agent, the proposal (hash, creators, total), the AI's rationale, confidence, flags and a one-line reason per creator, and audit rows "Agent delegated", "Agent proposed".
-3. Click **Approve agent's split (1 of 2)**. The browser leaves for auth.world.org (code flow, S256 PKCE, `max_age=0`, essential `acr`). Complete the check there. You return to the desk with "World ID check passed. Confirm the approval in your wallet." Log row "Human approved", proof valid. Status: awaiting admin.
-4. Bench, tab **Splits to approve**: click **Review the agent's split (admin)**, then **Approve this split with World ID**, and complete your own check as the admin. Status: both approved, awaiting chain. The panel shows both approvals.
+1. Desk: **Ask Claude to propose**. The agent proposes; a banner says nothing is payable yet. Show **Agent Pass activity** (proposal hash, creators, rationale).
+2. Click **Approve with World ID** (step-up). The browser redirects to the sandbox IdP.
+3. Complete the check with the sandbox identity. You return to Clippo: "approved". The panel shows the step-up with the `acr` and "fresh" (auth time within the window).
+4. Two-party: the admin does the same from the bench on the identical split. Status: both approved, awaiting chain.
+5. Show backend validation: the callback did the code exchange server-side; no secret reached the browser.
 
-The first approval links the approver's World ID subject to their Clippo account. Later approvals must return the same one.
+## Failure paths (the protected action does NOT occur; show the proof each time)
 
-## Failure paths (each one leaves the split undone; show the audit log after each)
-
-Use a fresh proposal for each (click **Ask the AI again**). Messages are from `stepup-client.ts` and the routes; each ends "Nothing was changed."
-
-| Path | What you do | Expected message and log row |
+| What you do | Expected | Code |
 | --- | --- | --- |
-| AI proposal rejected | Run the unit test `llm-proposer.test.ts` (over-pool, non-eligible, duplicates) or point the key at a failing model | Proposal source shows the non-AI split with the rejection reason. Log: "AI proposal rejected, non-AI split used" with the violation |
-| Denied or cancelled | At auth.world.org, decline or cancel (the issuer sends `error=access_denied`) | "Split not approved. You cancelled the World ID check." Log: Check cancelled, proof cancelled. No token is issued |
-| Expired check | Leave the issuer page open for over 10 minutes (the attempt lifetime in `stepup.ts`; the issuer's own timeout has not been seen), then finish | "The World ID check expired before it finished. Start again." Log: Check expired |
-| Wrong human | Finish the check with a World ID that is not the one already linked to your account, or one another account already uses | 403 STEP_UP_WRONG_ACCOUNT: "That World ID does not match this Clippo account, or another account already uses it." Log: Wrong approver |
-| Not enough assurance | Finish with an account whose `acr` is not in the accepted list (orb, orb-face by default) | 403 STEP_UP_NOT_ELIGIBLE: "...does not have the verification this approval requires." Log: Proof rejected |
-| Repeated token | After one approval, send `POST /api/campaigns/:id/split` again with the same `stepUpToken` (curl or devtools; the browser removes it from the URL) | A straight replay is stopped first by ALREADY_RELEASED or ALREADY_APPROVED (409). PROOF_REUSED (409 "That World ID check was already used.", log: Proof reused) only shows when those checks do not apply, so it is hard to stage on screen |
-| Expired proposal | Wait 30 minutes after the agent proposes (or set `expiresAt` in the DB), then approve | 410 "The agent's proposal expired". Log: Proposal expired. The Approve button disappears; ask again |
-| Wrong approver | As the admin on a campaign set to "campaigner only", or as a different campaigner, call `POST /api/agentpass/stepup/start` or `POST /api/campaigns/:id/split` | 403 Wrong approver (or "Not your campaign"). Log: Wrong approver |
-| Split changed | Call `POST /api/campaigns/:id/split` (or `stepup/start`) with the agent's `agentProposalId` but one amount edited | 409 "not what the agent proposed (hash mismatch)". Log: Split changed. A token minted for the original split, sent with other amounts and no proposal id, gives 403 STEP_UP_MISMATCH (log: Proof rejected) |
-| Already released | After both approvals, click approve again or repeat the request | 409 "already approved by everyone". Log: Already released |
-| Issuer down | Only if the issuer or JWKS is unreachable | 503 STEP_UP_UNAVAILABLE: "World ID is temporarily unavailable. This is not a verdict on the check." Do not stage this |
+| Cancel at World | Back in Clippo: "not approved". Split not released | `STEPUP_DENIED` 403 |
+| Let the attempt expire, then return | Split not released; start again | `STEPUP_EXPIRED` 410 |
+| Human-built split: change the split after starting, then approve | Approval refused | `STEPUP_BINDING_MISMATCH` 409 |
+| Agent proposal: edit the amounts | Refused before any step-up | `SPLIT_CHANGED` 409 (wins over the binding check) |
+| Complete with a different identity than the approver's | Refused | `STEPUP_IDENTITY_MISMATCH` 403 |
+| Replay the callback URL | Refused, nothing changes | `STEPUP_STATE_INVALID` 400 (state is single use) |
+| Re-use an already used attempt on approve | Refused | `STEPUP_CONSUMED` 409 |
+| Low assurance / stale auth | Refused | `STEPUP_ASSURANCE` / `STEPUP_STALE_AUTH` 403 |
+| Agent proposal released with no step-up (direct API call, IDKit proof only) | Refused before any other split check | `STEPUP_REQUIRED` 428 |
 
-The demo build does not show the step-up or most of the failure rows above. Against a real backend, an agent's split sent with the fake sheet's proof is refused with 403 STEP_UP_REQUIRED. With no backend and no escrow, the approval returns a canned "recorded, awaiting admin" result whatever the sheet outcome. Only the sheet's own Cancel ends in a refusal. Use the real step-up build for the failure rows, never the demo build, and never record them with `NEXT_PUBLIC_DEMO=1`. Not verified in a browser.
+Earlier-flow failures (agent proposal expired, wrong approver, already released, AI proposal rejected) are listed in `WORLD_AGENT_PASS.md`.
 
-After each failure show: the activity panel row, `GET /api/campaigns/:id/split` has no new approval, `GET /api/creator/earnings` shows no new payout.
+After each failure show: the activity panel row, `GET /api/stepup/:attemptId` status, `GET /api/campaigns/:id/split` has no new approval, `GET /api/creator/earnings` shows no new payout, no on-chain call.
 
 ## Guardrail talking point
 
-Show `src/lib/agents/guardrail.test.ts` (Agent Pass block): the agent module is pure, agent routes can only write the agent tables, and the split route
-checks and consumes a World ID proof (its test pins the IDKit path order) before it creates an approval. The step-up token is single use through
-`usedProof` (see `stepup.integration.test.ts`). Payouts only come from the escrow's on-chain event.
+Show `src/lib/agents/guardrail.test.ts` and `src/lib/agentpass/guardrail.test.ts`: agent code can only write agent tables; releasing needs a validated human step-up; payouts only come from the escrow's on-chain event. The proposer's identity is AgentKit/AgentBook; the prize integration is auth.world.org.
