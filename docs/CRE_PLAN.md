@@ -54,24 +54,42 @@ Limits checked (https://docs.chain.link/cre/service-quotas): 15 HTTP requests, 5
 - Clippo still picks the qualifying clips, and bot views on YouTube still count.
 - A single-node simulation cannot show the consensus benefit. We say so in the submission.
 
-**Removal test, honest result.** Without CRE, a server key that reads YouTube would do the same work, and users would have to trust that key. So CRE is a strong feature at the trust boundary (score 3 of 5), not something the product cannot exist without. Showing the proof in the app (step 7) is what makes the difference visible to a user.
+## 3b. Is it core? The honest check (added after review)
+
+The design above only makes CRE a more honest courier. Checked in the code:
+
+1. **Money depends on CRE, but only by construction.** `reportViews` accepts only `reportAdapter`, and `setReportAdapter(address)` takes any address. Swapping the receiver for one server key is one deploy parameter. Remove CRE and the product works the same, with a key to trust. That is an add-on test failure.
+2. **The app never shows CRE's numbers.** Every view count a user sees (campaign totals, `lib/earnings.ts`, marketplace, analytics) is read from the backend `ViewSnapshot` table. Nothing reads the escrow's `ViewsReported` event. So even with CRE removed, the screens look identical.
+3. **In a demo, CRE is our own key.** `simulate --broadcast` sends the report from our wallet through the mock forwarder, and the receiver in simulation mode only checks `tx.origin == expectedWorkflowOwner`. Until a workflow is really deployed, the "DON" is us. We may not claim trust-minimization from a simulation.
+4. **Even deployed, the owner can change the workflow.** Unless the receiver pins `expectedWorkflowId` and calls `lockConfig`, we could ship different code later. That pin is the one thing a plain key cannot copy, and it needs deploy access (`cre whoami`: Not enabled).
+5. **CRE does not touch HumanSplit** (one of three payout modes).
+
+**What makes it core (three layers, all needed):**
+
+| Layer | Change | What a user sees if CRE is removed |
+| --- | --- | --- |
+| Truth | Nodes read YouTube themselves (section 3). | Views can be faked again by whoever runs the server. |
+| Visible | "Confirmed views" = the views CRE reported on-chain. Earnings, campaign totals and creator pages show them; Clippo's own YouTube poll shows only as "pending". Payouts follow confirmed views. | Confirmed views, badges and proof links disappear and nothing is payable. The app is visibly broken. |
+| Immutable | After deploy, pin `expectedWorkflowId` and `lockConfig` on the receiver. | Anyone could swap the reporter or the logic. |
+
+Score by layer: Truth only = 2 to 3 (hidden). Truth + Visible = 3 (strong feature). Truth + Visible + Immutable (deployed) = 4. Never 5: Clippo still chooses the clips and bot views still count. If deploy access is not granted, we stop at 3 and say so.
 
 ## 4. Milestones
 
-Estimates are for one builder. Cut line: if M3 is not green after about 7 hours, ship the current workflow plus the honest notes, and stop.
+Estimates are for one builder. Order is chosen so the visible part is built first: it works on the current workflow and cannot be cut by a late finish.
 
 | M | Work | Est. | Done when |
 | --- | --- | --- | --- |
-| M0 | Branch, worktree, install, baseline | 15 min | **Done.** `npm run typecheck` ok, 9 tests pass on `feat/cre-core`. |
-| M0b | Owner asks for CRE deploy access (`cre account access`) in the background | 5 min, owner | Request sent. Do not wait for it. |
-| M1 | Manifest route + wallet-bound channel code, with vitest tests | 1.5 h | `GET /api/snapshots/clips` returns only qualifying clips; new codes include the wallet; web tests and typecheck pass. |
-| M2 | Workflow v2: secrets, YouTube reads, binding check, median consensus. Pure helpers in `snapshot.ts` or a new file, with unit tests. Mock YouTube added to `cre/scripts/mock-backend.mjs` via a config base URL. | 3 h | Unit tests pass; `cre-compile` passes; simulate against the mock prints kept and dropped clips. |
-| M3 | Local end-to-end on the anvil fork, with `--broadcast` | 1 h | Creators credited (checked with `cast call`). Negative cases show: wrong bio code dropped, unmapped wallet `NotHuman`, no growth credits 0, 60 rows make 3 reports. |
-| M4 | Proof line in the app | 1.5 h | Slip shows views, the CRE report tx and a link. Optional if time is short. |
-| M5 | Real Arc: simulate `--broadcast` against the deployed escrow and a receiver in simulation mode | 1 h | Needs the enforcing escrow deployed (owner signs). Real tx hashes saved in the build log. |
-| M6 | Evidence and docs: real CLI output, `docs/tracks/CRE.md`, demo segment in `docs/DEMO_SCRIPT.md`, build log | 45 min | Nothing in the docs claims more than was run. |
+| M0 | Branch, worktree, install, baseline | 15 min | **Done.** typecheck ok, 9 tests pass. |
+| M0b | Owner runs `cre account access` | 5 min, owner | Request sent. Do not wait for it. |
+| M4' | **Confirmed views.** Indexer stores `ViewsReported` (views, delta, tx, block). Earnings, campaign totals and creator pages show "Confirmed by Chainlink: N" with the report tx, and "Pending: M" from Clippo's own poll. | 2 h | With the local anvil fork run, the screens show confirmed views and a tx link; with no report they show 0 confirmed. Tests pass. |
+| M1 | Manifest route `GET /api/snapshots/clips` + wallet-bound channel code | 1.5 h | Route returns only qualifying clips; new codes include the wallet; web tests pass. |
+| M2 | Workflow v2: secrets, YouTube reads, bio check, median consensus; mock YouTube in `cre/scripts/mock-backend.mjs` | 3 h | Unit tests pass; `cre-compile` passes; simulate against the mock prints kept and dropped clips. |
+| M3 | Local end-to-end on the anvil fork with `--broadcast` | 1 h | Creators credited (`cast call`); negatives show: wrong bio code dropped, unmapped wallet `NotHuman`, no growth credits 0, 60 rows make 3 reports. |
+| M5 | Real Arc: simulate `--broadcast` against the deployed escrow. If deploy access exists: deploy the workflow, pin id, `lockConfig`. | 1 h | Real tx hashes in the build log. |
+| M6 | Evidence and docs: real CLI output, `docs/tracks/CRE.md`, demo segment, build log | 45 min | Nothing claims more than was run. |
 
-Order: M1 then M2 then M3. M4 and M5 can start once M3 is green. M0b first, because approval takes time.
+About 9.5 hours in total, which leaves little sleep before 09:00. If late, cut in this order: marketplace stats in M4', the 60-row test in M3, then M6 polish. Do not cut the wallet-bound bio check, or Clippo can attach a channel to any wallet.
 
 ## 5. Needed from the owner
 
@@ -84,5 +102,5 @@ Order: M1 then M2 then M3. M4 and M5 can start once M3 is green. M0b first, beca
 
 - CRE calling an LLM for clip verdicts: too large for the time left.
 - Instagram and X views through CRE: YouTube only.
-- Changing the contracts: the current escrow and receiver already fit this design.
+- Changing the contracts: the current escrow and receiver already fit this design. (Pinning the workflow id uses setters that already exist.)
 - Claiming a live DON deployment unless one is really done.
