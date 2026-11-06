@@ -4,7 +4,7 @@
 set -euo pipefail
 export PATH="$HOME/.foundry/bin:$PATH"
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
-anvil --fork-url "${ARC_RPC:-https://rpc.testnet.arc.network}" --port 8545 --chain-id 5042002 >/dev/null 2>&1 &
+anvil --fork-url "${ARC_RPC:-https://rpc.testnet.arc.io}" --port 8545 --chain-id 5042002 >/dev/null 2>&1 &
 ANVIL=$!; trap 'kill $ANVIL $MOCK 2>/dev/null || true' EXIT
 until cast block-number --rpc-url http://127.0.0.1:8545 >/dev/null 2>&1; do sleep 1; done
 bash scripts/local-chain.sh                 # deploys MockUSDC/escrow/receiver, patches config.staging.json receiverAddress
