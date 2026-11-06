@@ -45,7 +45,15 @@ Track status at the start:
 
 ## Log
 
-### 12. Frontend: Confirmed vs Pending views, commit pending
+### 13. End-to-end on a local fork: CRE report -> indexer -> Confirmed views, commit pending
+
+- **What:** added `web/src/lib/chain/confirmed-views.e2e.test.ts`, skipped unless `E2E_CRE_FORK=1`. Ran the full chain locally: anvil fork of Arc, `cre/scripts/local-chain.sh` (fresh MockUSDC, escrow, receiver, linked creators), the mock backend with a FAKE YouTube key, then `cre workflow simulate --broadcast`. The workflow kept 3 of 5 clips and delivered 1 batch of 3 rows (0 failed). Then the real `syncChain` read the real `ViewsReported` logs into the test database.
+- **Result:** the test passed. Confirmed views from the chain events: campaign 7 creator 0x1111... = 1200, campaign 7 creator 0xabcd... = 300, campaign 12 creator 0xabcd... = 5000; the proof tx hash is a real hash from the fork; `creatorEarnings` totals confirmed = 5300. This also shows the web ABI decodes the freshly built contract's event.
+- **Run command:** `E2E_CRE_FORK=1 ESCROW_ADDRESS=<escrow> ARC_RPC_URL=http://127.0.0.1:8545 ESCROW_DEPLOY_BLOCK=<block before deploy> npx vitest run src/lib/chain/confirmed-views.e2e.test.ts`.
+- **Normal suite:** `npm test` 311 passed, 1 skipped (this test); typecheck clean. Fork, mock server and patched files were cleaned up afterwards.
+- **Not proven:** the browser screens were not checked against this data; the fork is local (no real Arc, no real YouTube, one CRE node); the proof link points at a fork transaction that does not exist on the explorer.
+
+### 12. Frontend: Confirmed vs Pending views, commit `0cb93b7`
 
 - **What:** new `ConfirmedViews` component (table cell, stat block, line) with a Chainlink badge, Pending beneath and a proof link, plus one explainer line. Shown on the creator ledger (`LedgerDash`, `LedgerView`), the brand desk (`DeskView`, `DeskAnalytics`), clip detail (`SlipDetail`), and the channel screens (`JoinView`, `AccountView`: the `clippo:<wallet>` code with a copy button, a re-verify prompt using `upgrade-code`, and a hint when views are pending but nothing is confirmed). Views that are only Clippo's own count are relabelled "Clippo count". HUMAN_SPLIT hides the Confirmed block. The Desk table now takes views from `/api/dashboard/campaigner`.
 - **Why:** the app must show users which views the Chainlink CRE workflow confirmed, since only those are paid.
@@ -175,7 +183,7 @@ Track status at the start:
 
 ## Coming next
 
-CRE (branch `feat/cre-core`, see `docs/CRE_PLAN.md`): M1 manifest route and wallet-bound channel code, M2 workflow reads YouTube, M3 local end-to-end, then M4 to M6.
+CRE (branch `feat/cre-core`, see `docs/CRE_PLAN.md`): backend, workflow, frontend and the local end-to-end are built. Left: a real YouTube read (needs the owner's key, test channel and wallet), the real Arc run (needs the deployed escrow), browser check of the screens with real data, evidence and docs, and pin and lock if deploy access is approved.
 
 Project-wide:
 
