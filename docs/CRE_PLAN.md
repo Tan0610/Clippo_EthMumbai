@@ -74,29 +74,36 @@ The design above only makes CRE a more honest courier. Checked in the code:
 
 Score by layer: Truth only = 2 to 3 (hidden). Truth + Visible = 3 (strong feature). Truth + Visible + Immutable (deployed) = 4. Never 5: Clippo still chooses the clips and bot views still count. If deploy access is not granted, we stop at 3 and say so.
 
-## 4. Milestones
+## 4. Plan, built around the scope
 
-Estimates are for one builder. Order is chosen so the visible part is built first: it works on the current workflow and cannot be cut by a late finish.
+Scope, data shapes, file ownership and owner dependencies are fixed in `docs/CRE_SCOPE.md`. Summary: **no contract change**; backend, frontend and the CRE workflow are three tracks on disjoint files that build in parallel against one frozen data contract, then join.
 
-| M | Work | Est. | Done when |
-| --- | --- | --- | --- |
-| M0 | Branch, worktree, install, baseline | 15 min | **Done.** typecheck ok, 9 tests pass. |
-| M0b | Owner runs `cre account access` | 5 min, owner | Request sent. Do not wait for it. |
-| M4' | **Confirmed views.** Indexer stores `ViewsReported` (views, delta, tx, block). Earnings, campaign totals and creator pages show "Confirmed by Chainlink: N" with the report tx, and "Pending: M" from Clippo's own poll. | 2 h | With the local anvil fork run, the screens show confirmed views and a tx link; with no report they show 0 confirmed. Tests pass. |
-| M1 | Manifest route `GET /api/snapshots/clips` + wallet-bound channel code | 1.5 h | Route returns only qualifying clips; new codes include the wallet; web tests pass. |
-| M2 | Workflow v2: secrets, YouTube reads, bio check, median consensus; mock YouTube in `cre/scripts/mock-backend.mjs` | 3 h | Unit tests pass; `cre-compile` passes; simulate against the mock prints kept and dropped clips. |
-| M3 | Local end-to-end on the anvil fork with `--broadcast` | 1 h | Creators credited (`cast call`); negatives show: wrong bio code dropped, unmapped wallet `NotHuman`, no growth credits 0, 60 rows make 3 reports. |
-| M5 | Real Arc: simulate `--broadcast` against the deployed escrow. If deploy access exists: deploy the workflow, pin id, `lockConfig`. | 1 h | Real tx hashes in the build log. |
-| M6 | Evidence and docs: real CLI output, `docs/tracks/CRE.md`, demo segment, build log | 45 min | Nothing claims more than was run. |
+Estimates are for one builder per track.
 
-About 9.5 hours in total, which leaves little sleep before 09:00. If late, cut in this order: marketplace stats in M4', the 60-row test in M3, then M6 polish. Do not cut the wallet-bound bio check, or Clippo can attach a channel to any wallet.
+| Track | Work (ids from the scope file) | Est. |
+| --- | --- | --- |
+| Backend | B1 table + migration, B2 indexer, B3 service, B4 additive fields, B5 frozen manifest route, B6 wallet-bound code + upgrade route, B7 tests and API.md | 4.5 h |
+| Frontend | F1 types + mocks, F2 `ConfirmedViews`, F3 creator ledger, F4 brand desk, F5 clip detail, F6 channel code + re-verify, F7 explainer, F8 checks | 4.5 h |
+| CRE | C1 workflow v2, C2 secrets, C3 helpers + tests, C4 mock backend + fake YouTube, C5 config | 4.5 h |
 
-## 5. Needed from the owner
+Sync points:
+- **S0 (now):** scope and data contract frozen. Contracts: no change.
+- **S1 (about 45 min in):** FE has its types and mock data, so it builds without the backend.
+- **S2 (about 3 h in):** backend routes work on a local database; FE switches from mocks to real calls.
+- **S3 (about 5 h in):** CRE `simulate --broadcast` on the local Arc fork writes `ViewsReported`, the backend indexes it, and the creator ledger and brand desk show Confirmed with a tx link. All tracks join here. About 1 h for fixes.
+- **S4:** real Arc run (needs owner items 6 to 8 in the scope file). About 1 h.
+- **S5:** evidence and docs: real CLI output, `docs/tracks/CRE.md`, demo segment, build log. About 1 h.
 
-1. Run `cre account access` (browser) and tell us the result. Deploy is optional for the prize.
-2. A YouTube Data API key, placed only in `cre/.env` and the Vercel env (never in chat, never committed). One real public video on a channel whose bio you can edit, to test the real read.
-3. Agree that existing channels must re-verify with the new code.
-4. For M5: the enforcing escrow deployed on Arc (tracked in `docs/FOCUS.md`, step 1), then the receiver address.
+Wall clock, if the three tracks run in parallel: about 8 hours from the owner's go, which fits before 09:00 with about 2 hours for sleep and buffer. One builder doing it all in sequence would not fit.
+
+Cut list if late, in this order: F5 clip detail, F4 analytics totals (keep the campaign table column), B6 upgrade route (re-verify by hand), the 60-row test. Never cut: the frozen manifest, the bio-bound check, the indexer, the creator ledger, the brand desk column.
+
+Immutable layer (pin and lock) happens only if deploy access is approved; otherwise we stop at "strong feature" and say so.
+
+## 5. Owner dependencies (full list in the scope file, section 5)
+
+Before we start: approve the scope; `cre account access`; a YouTube API key in `cre/.env` and `web/.env.local`; a test channel, one public video and a test wallet.
+Before the real Arc run: deploy the escrow and receiver; a funded CRE key; the demo wallet registered as a human (World track).
 
 ## 6. Not doing
 
