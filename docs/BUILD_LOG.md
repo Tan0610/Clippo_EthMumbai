@@ -45,7 +45,13 @@ Track status at the start:
 
 ## Log
 
-### 17. Contracts deployed on real Arc testnet (simulation mode), commit pending
+### 18. First CRE report on REAL Arc, reading the REAL YouTube video, commit pending
+
+- **What:** after the owner funded the simulation wallet (funding tx `0xc19bf62333ac5ffb3ac79a24734d2690c8589e296903f20ca0360bd22df1c707`, status success, 20 USDC), ran `bash scripts/simulate-arc-real.sh vWk4YV_dbsE UCIZw3qclbEDMa4TCFMAatww` (`cre workflow simulate --target production-settings --broadcast`, CLI v1.39.0). Manifest: one real clip from a local mock backend. YouTube: the real Data API.
+- **Result:** "youtube agreed: kept 1/1 clips", 1 report, 0 failed rows. Transaction `0xa41f91daf5431332ecaf1fbdfbf7f8ca13a38d39de8c41d0c1291f229f5c8409` (block 71094857, status success): from the simulation wallet `0x7149...01F6`, to Arc's Chainlink simulation forwarder `0x6E9E...eDc1`, 4 logs: `CreatorCredited` and `ViewsReported` from the escrow, `ReportProcessed` from the receiver, and the forwarder's own event. Independent `cast call` on the escrow: `reportedViews(1, 0x8CF9...60e5)` = 3 (the video's real count), `credited` = 30000 units = 0.03 USDC. Explorer: https://explorer.testnet.arc.io/tx/0xa41f91daf5431332ecaf1fbdfbf7f8ca13a38d39de8c41d0c1291f229f5c8409. Output: `docs/tracks/cre-simulation-real-arc.txt` (no API key in it).
+- **Not proven:** it is a SIMULATION: one CRE node, the report is sent by our own simulation wallet through Arc's Chainlink TEST forwarder, so it does not show Chainlink nodes signing and the receiver is not locked. The manifest was served locally, not by the deployed backend. The deployed site and Vercel still run the old build and the old escrow, so the app does not show this yet. The creator's human registration is an attestor-signed stand-in for the World check.
+
+### 17. Contracts deployed on real Arc testnet (simulation mode), commit `b1129d0`
 
 - **What:** the owner ran `bash scripts/arc-deploy.sh` with the admin wallet. Result, read back from the chain by Claude:
   - ClippoEscrow `0x1e05373c199D764f7dE0353d58AFEa2b4C6326Ef` (creation tx `0xc65b42e4998cc93d4d9bb2a363d53acf11129329fd5426feaaeb004f9de5ba03`), deploy block 71094327.
@@ -207,7 +213,7 @@ Track status at the start:
 
 ## Waiting on you
 
-00. Fund the CRE simulation wallet `0x7149dCB8f568794c7bed1a3Bd90A6f397EeF01F6` with a little USDC at https://faucet.circle.com (its balance was 0), then tell Claude. The contracts are already deployed (log entry 17).
+00. Deploy this branch to Vercel with the new escrow (`ESCROW_ADDRESS=0x1e05373c199D764f7dE0353d58AFEa2b4C6326Ef`, `ESCROW_DEPLOY_BLOCK=71094327`) so the app shows the Confirmed views; and run `! cre account access` and tell Claude the result.
 0. CRE: run `cre account access` and report the result; put a YouTube Data API key only in `cre/.env` and Vercel; confirm that existing channels must re-verify with a wallet-bound code.
 1. **Clippo backend wallet:** create a new wallet, fund it with testnet USDC, and send me only its address. The address is fixed at deploy. The private key goes in Vercel as `HUMAN_ATTESTOR_PRIVATE_KEY`.
 2. **Arc Studio:** `npm i -g @circle-fin/arc-studio-cli`, then `arc-studio login`.
