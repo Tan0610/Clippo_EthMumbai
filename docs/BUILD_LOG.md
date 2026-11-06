@@ -45,7 +45,15 @@ Track status at the start:
 
 ## Log
 
-### 11. CRE workflow v2: nodes read YouTube themselves, commit pending
+### 12. Frontend: Confirmed vs Pending views, commit pending
+
+- **What:** new `ConfirmedViews` component (table cell, stat block, line) with a Chainlink badge, Pending beneath and a proof link, plus one explainer line. Shown on the creator ledger (`LedgerDash`, `LedgerView`), the brand desk (`DeskView`, `DeskAnalytics`), clip detail (`SlipDetail`), and the channel screens (`JoinView`, `AccountView`: the `clippo:<wallet>` code with a copy button, a re-verify prompt using `upgrade-code`, and a hint when views are pending but nothing is confirmed). Views that are only Clippo's own count are relabelled "Clippo count". HUMAN_SPLIT hides the Confirmed block. The Desk table now takes views from `/api/dashboard/campaigner`.
+- **Why:** the app must show users which views the Chainlink CRE workflow confirmed, since only those are paid.
+- **Files:** `web/src/components/{ConfirmedViews.tsx,confirmed.css,api.ts,LedgerDash,LedgerView,DeskView,DeskAnalytics,SlipDetail,JoinView,AccountView}`, `web/src/ui-mocks/{data,market}.ts`.
+- **Tests:** `npm run typecheck` clean; lint clean on the changed files (an old error in `BenchView.tsx` is not ours). The overflow check was run on the five changed screens in demo mode with a copied script: 270 width, theme and screen combinations passed after one fix at 360 px. Copy button and the re-verify flow were exercised in demo mode only.
+- **Not proven:** nothing ran against the real backend routes, real proof links, or a real signed-in session. Demo mock data uses a placeholder proof marked as demo, not a real transaction. `/join` was only overflow-checked. The mixed-mode fallback total in the creator ledger can be off when the server omits `pendingViews`.
+
+### 11. CRE workflow v2: nodes read YouTube themselves, commit `d954f67`
 
 - **What:** `cre/workflows/clippo-settlement/main.ts` now fetches the clip manifest (`/api/snapshots/clips`), reads the YouTube key from the CRE secret `YOUTUBE_API_KEY`, and every node calls `videos.list` and `channels.list` (key in the `x-goog-api-key` header only). A clip is kept only if its video sits on the manifest's channel and the channel bio holds `clippo:<wallet>`. View counts go through `median` consensus in one flat record (`kept` identical plus `v0..vN` medians). The rest (cron and HTTP triggers, staleness and zero-receiver guards, chunking, receipt check) is unchanged.
 - **Why:** the earlier workflow only read Clippo's own server, so consensus proved nothing.
@@ -53,7 +61,7 @@ Track status at the start:
 - **Tests:** `npm run typecheck` clean; `npm test` 22 pass (9 old, 13 new); `npm run compile` builds a 2.6 MB WASM. `bash scripts/simulate-local.sh` (local anvil fork of Arc, mock backend, FAKE YouTube key) exited 0: 5 clips in the manifest, 3 kept, 2 dropped with a logged reason (wrong bio code; video on another channel); `cast call` showed campaign 7 creators credited 1200 and 300 views, campaign 12 capped by the pool; a replay credited nothing more; an unlinked wallet failed with `NotHuman`.
 - **Not proven:** nothing ran against real YouTube or a real key; the real `/api/snapshots/clips` route was not used by this run (the mock served the contract shape); the simulator is one node, so median and `identical` never ran across nodes; a wrong-key or YouTube-5xx run end to end was not done; nothing on real Arc.
 
-### 10. Backend: confirmed views, clip manifest, wallet-bound channel codes, commit pending
+### 10. Backend: confirmed views, clip manifest, wallet-bound channel codes, commit `f61084b`
 
 - **What:** new `ViewsReport` table and migration; the indexer stores each on-chain `ViewsReported` event; `web/src/lib/confirmed.ts` computes Confirmed (highest reported cumulative) and Pending (Clippo count minus confirmed) with a proof link; additive fields `confirmedViews`, `pendingViews`, `proof` on creator earnings, creator and campaigner dashboards and `GET /api/campaigns/:id`; `chain.explorerBase` in `/api/chain/config`; new `GET /api/snapshots/clips` (day-frozen manifest for CRE); channel codes are now `clippo:<wallet>`, with `needsReverify` and `POST /api/channels/:id/upgrade-code`. No contract change.
 - **Why:** the app must show the views CRE confirmed, and CRE needs a list of clips plus a wallet-bound way to prove channel ownership.
