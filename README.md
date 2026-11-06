@@ -26,8 +26,16 @@ design/     Visual direction
 ## Quickstart
 
 Prereqs: Node 20+, Foundry, and for CRE the `cre` CLI and Bun.
+> Arc tooling note: Arc docs recommend `arc-forge` / `arc-cast` (Arc Foundry fork, https://docs.arc.io/arc/tutorials/install-arc-foundry.md), e.g. `arc-forge create src/X.sol:X --rpc-url $ARC_TESTNET_RPC_URL --private-key $PRIVATE_KEY --broadcast`. Plain `forge` may work for tests, but deployment should use `arc-forge` per Arc docs (not run here). Arc requires `maxFeePerGas >= 20 Gwei`; see `docs/tracks/ARC.md`.
 
 ```bash
+# get the code with the contracts/lib submodules (OpenZeppelin, forge-std)
+git clone --recurse-submodules <REPO_URL> && cd Clippo_EthMumbai
+# already cloned without them: git submodule update --init --recursive
+
+# Foundry (once)
+curl -L https://foundry.paradigm.xyz | bash && foundryup
+
 # contracts
 cd contracts && forge build && forge test
 
@@ -39,8 +47,8 @@ npm test && npm run typecheck
 
 # cre
 cd cre && npm install && npm run typecheck
-cp .env.example .env   # then edit workflows/clippo-settlement/config.staging.json and project.yaml
-npm run simulate       # needs cre CLI; see docs/RUNBOOK.md
+cp .env.example .env   # 1) fill .env, 2) replace the placeholders in workflows/clippo-settlement/config.staging.json and project.yaml
+npm run simulate       # 3) only then; needs the cre CLI; see docs/RUNBOOK.md
 ```
 
 ## Environment variables
@@ -59,9 +67,10 @@ npm run simulate       # needs cre CLI; see docs/RUNBOOK.md
 | `YOUTUBE_API_KEY` | web | YouTube Data API v3 | missing: 503 NOT_CONFIGURED |
 | `NEXT_PUBLIC_DEMO_ADMIN_WALLET` | web | Demo admin wallet used by the UI (must match `ADMIN_WALLETS`) | `0xAdmin...0001` |
 | `CRE_ETH_PRIVATE_KEY` | cre | Key for `simulate --broadcast` (testnet only) | empty |
-| `PRIVATE_KEY`, `ARC_RPC_URL` | contracts (shell) | Deploy | required |
+| `PRIVATE_KEY` (or `DEPLOYER_PRIVATE_KEY`), `ARC_RPC_URL` | contracts (shell) | Deploy key (passed to forge `--private-key`, not read by Deploy.s.sol) and RPC (default `https://rpc.testnet.arc.io`) | key required |
+| `ADMIN_ADDRESS`, `FORWARDER_ADDRESS`, `UPDATER_ADDRESS`, `EXPECTED_WORKFLOW_OWNER` | contracts (shell) | Required by `Deploy.s.sol` (owner/admin, CRE forwarder, updater, workflow owner; or `INSECURE_SKIP_WORKFLOW_CHECK=true` for simulation only) | required |
 | `USDC_ADDRESS` | contracts (shell) | Existing USDC | omitted: deploys MockUSDC |
-| `TREASURY`, `ADMIN`, `FORWARDER_ADDRESS` | contracts (shell) | Fee sink, extra admin, CRE forwarder | deployer |
+| `TREASURY_ADDRESS`, `RECORDER_ADDRESS`, `GUARDIAN_ADDRESS` | contracts (shell) | Fee sink, referral recorder, guardian | `ADMIN_ADDRESS` / `UPDATER_ADDRESS` / `ADMIN_ADDRESS` |
 | `CAMPAIGNER_FEE_BPS`, `CREATOR_FEE_BPS` | contracts (shell) | Fees, max 50 bps each | 25 / 25 |
 
 ## Honest status
@@ -70,7 +79,7 @@ Updated after the UI/demo pass. "Verified" below means exercised in this repo (u
 
 | Area | Status |
 | --- | --- |
-| Escrow contracts (3 modes, fees, reject refund, deadlines) | Real code with Foundry tests. `contracts/broadcast/Deploy.s.sol/5042002` holds a local broadcast record for Arc testnet; confirm the addresses on the explorer before quoting them (not re-verified here). |
+| Escrow contracts (3 modes, fees, reject refund, deadlines) | Real code with Foundry tests. No Arc testnet deployment record is committed and none has been run from this repo yet. `node scripts/deploy-arc.mjs --deploy` (or the forge command in docs/tracks/ARC.md) writes `contracts/broadcast/Deploy.s.sol/5042002/run-latest.json`, the only broadcast file git does not ignore, so the record can be committed after a real deploy. |
 | `ClippoReportReceiver` (IReceiver adapter) | Real code, tested with a stand-in forwarder. |
 | CRE workflow | Code typechecks against the SDK and has a snapshot-contract test. `cre workflow simulate` has NOT been run in this repo; config and project YAML are best-effort. |
 | Backend API + Prisma (Postgres) | Real. `npm test` runs the API against a throwaway Postgres. Session auth is SIWE in production; the unsigned dev sign-in only works outside production. |

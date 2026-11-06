@@ -76,8 +76,9 @@ Simulation vs production:
 - **Simulation** (`cre workflow simulate --broadcast` through the Arc MockKeystoneForwarder `0x6E9EE680ef59ef64Aa8C7371279c27E496b5eDc1`): per the CRE docs the mock forwarder does NOT supply workflow metadata, so metadata validation cannot pass. Deploy with `INSECURE_SKIP_WORKFLOW_CHECK=true` (or call `setWorkflowCheckSkipped(true)`), then before going live call `setForwarder(<KeystoneForwarder>)`, `setExpectedWorkflowOwner(...)` and `setWorkflowCheckSkipped(false)`. The sender check still applies in simulation mode. Local anvil/mock scripts pass `ALLOW_ANY_CHAIN=true`, which defaults the skip flag to true so they keep working unchanged.
 
 ## Deploy (Arc testnet)
+> Arc tooling note: Arc docs recommend `arc-forge` / `arc-cast` (Arc Foundry fork, https://docs.arc.io/arc/tutorials/install-arc-foundry.md), e.g. `arc-forge create src/X.sol:X --rpc-url $ARC_TESTNET_RPC_URL --private-key $PRIVATE_KEY --broadcast`. Plain `forge` may work for tests, but deployment should use `arc-forge` per Arc docs (not run here). Arc requires `maxFeePerGas >= 20 Gwei`; see `docs/tracks/ARC.md`.
 
-Network: RPC `https://rpc.testnet.arc.network`, chain id `5042002`. USDC (6 decimals) is the native-ERC20 at `0x3600000000000000000000000000000000000000` (script default). `script/Deploy.s.sol` deploys ALL production contracts in one run: `ClippoEscrow`, `ClippoReportReceiver` (wired as the escrow reportAdapter, forwarder from env), `ClippoReferral` (recorder/guardian set) and `ClippoCreatorProfile` (updater set). It never deploys MockUSDC. Ownership of every contract is handed to `ADMIN_ADDRESS` at the end (deployer admin right is revoked).
+Network: RPC `https://rpc.testnet.arc.io`, chain id `5042002`. USDC (6 decimals) is the native-ERC20 at `0x3600000000000000000000000000000000000000` (script default). `script/Deploy.s.sol` deploys ALL production contracts in one run: `ClippoEscrow`, `ClippoReportReceiver` (wired as the escrow reportAdapter, forwarder from env), `ClippoReferral` (recorder/guardian set) and `ClippoCreatorProfile` (updater set). It never deploys MockUSDC. Ownership of every contract is handed to `ADMIN_ADDRESS` at the end (deployer admin right is revoked).
 
 Env (required first):
 
@@ -103,11 +104,11 @@ A missing required var reverts with `Deploy: missing required env <NAME>`.
 cd contracts
 export ADMIN_ADDRESS=0x... FORWARDER_ADDRESS=0x... UPDATER_ADDRESS=0x... EXPECTED_WORKFLOW_OWNER=0x...
 # dry run (simulation only)
-forge script script/Deploy.s.sol --rpc-url https://rpc.testnet.arc.network
+forge script script/Deploy.s.sol --rpc-url https://rpc.testnet.arc.io
 # broadcast with a raw key ...
-forge script script/Deploy.s.sol --rpc-url https://rpc.testnet.arc.network --chain-id 5042002 --broadcast --private-key $PRIVATE_KEY
+forge script script/Deploy.s.sol --rpc-url https://rpc.testnet.arc.io --chain-id 5042002 --broadcast --private-key $PRIVATE_KEY
 # ... or a keystore account (cast wallet import deployer --interactive)
-forge script script/Deploy.s.sol --rpc-url https://rpc.testnet.arc.network --chain-id 5042002 --broadcast --account deployer
+forge script script/Deploy.s.sol --rpc-url https://rpc.testnet.arc.io --chain-id 5042002 --broadcast --account deployer
 ```
 
 The deployer needs Arc testnet gas (Arc pays gas in USDC; use the Circle faucet). The console ends with a ready-to-paste block (`ESCROW_ADDRESS`, `ESCROW_DEPLOY_BLOCK`, `REFERRAL_ADDRESS`, `PROFILE_ADDRESS`, `REPORT_RECEIVER_ADDRESS`, `USDC_ADDRESS`). Addresses/blocks are also in `broadcast/Deploy.s.sol/5042002/run-latest.json`.
@@ -119,7 +120,7 @@ Local testing only: `script/DeployMock.s.sol` deploys a MockUSDC (anvil); pass i
 ### Post-deploy checklist
 1. Sync ABIs: `cd web && npm run abi:sync`.
 2. Fill web env: `ESCROW_ADDRESS`, `ESCROW_DEPLOY_BLOCK`, `REFERRAL_ADDRESS`, `PROFILE_ADDRESS`, `REPORT_RECEIVER_ADDRESS`, `USDC_ADDRESS`; plus the backend signer key matching `UPDATER_ADDRESS` (check `web/.env.example` for exact names).
-3. CRE: set `receiverAddress` = `REPORT_RECEIVER_ADDRESS` in `cre/workflows/clippo-settlement/config.*.json`. To change the forwarder later (as owner/`ADMIN_ADDRESS`): `cast send $REPORT_RECEIVER_ADDRESS "setForwarder(address)" $NEW_FORWARDER --rpc-url https://rpc.testnet.arc.network --account admin`.
+3. CRE: set `receiverAddress` = `REPORT_RECEIVER_ADDRESS` in `cre/workflows/clippo-settlement/config.*.json`. To change the forwarder later (as owner/`ADMIN_ADDRESS`): `cast send $REPORT_RECEIVER_ADDRESS "setForwarder(address)" $NEW_FORWARDER --rpc-url https://rpc.testnet.arc.io --account admin`.
 4. Fund the referral pool (`ClippoReferral.fund`) if referrals are enabled (feature flags stay off pending legal review).
 5. Confirm on-chain: `escrow.reportAdapter()` = receiver, `receiver.forwarder()` = forwarder, `escrow.owner()` = admin.
 
