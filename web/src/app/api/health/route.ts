@@ -43,7 +43,6 @@ export const GET = route(async () => {
     clippoWallet: has("HUMAN_ATTESTOR_PRIVATE_KEY"),
     llm,
     worldId: has("WORLD_ID_APP_ID") && has("WORLD_ID_RP_ID") && has("WORLD_ID_SIGNING_KEY"),
-    worldIdP: has("WORLD_IDP_CLIENT_ID") && has("WORLD_IDP_CLIENT_SECRET") && has("WORLD_IDP_REDIRECT_URI"),
     youtube: has("YOUTUBE_API_KEY"),
     storage: storageMode(),
     storageReady: storageMode() === "blob" ? has("BLOB_READ_WRITE_TOKEN") || has("BLOB_STORE_ID") : !process.env.VERCEL,

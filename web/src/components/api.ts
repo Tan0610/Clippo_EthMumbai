@@ -462,9 +462,6 @@ export const agentPass = {
     withFallback(() => req<AgentActivity>(`/campaigns/${campaignId}/agent`), (): AgentActivity => ({ mode: "demo", proposals: [], audit: [] })),
   /** Admin bench feed across campaigns. */
   feed: () => withFallback(() => req<AgentActivity>("/admin/agent-pass"), (): AgentActivity => ({ mode: "demo", proposals: [], audit: [] })),
-  /** World IdP step-up for one exact split. Returns the issuer URL to send the browser to. */
-  stepUpStart: (input: { campaignId: string; splits: { creatorWallet: string; amount: number }[]; agentProposalId?: string; returnTo: "desk" | "bench" }) =>
-    req<{ authorizeUrl: string; splitHash: string }>(`/agentpass/stepup/start`, { json: input }),
   /** A check that ended in the widget (cancelled / expired / failed): log it. Best effort, never blocks the UI. */
   reportCheck: (campaignId: string, kind: "CANCELLED" | "EXPIRED" | "FAILED", proposalId?: string, splitHash?: string, message?: string) =>
     req(`/campaigns/${campaignId}/split/audit`, { json: { kind, proposalId, splitHash, message } }).catch(() => null),
