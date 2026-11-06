@@ -38,7 +38,7 @@ Project root directory on Vercel: `web`. Scopes: **P** = Production, **V** = Pre
 
 | Name | Comes from | Scope | Secret | Need |
 |---|---|---|---|---|
-| `ARC_RPC_URL` | Arc docs (`https://rpc.testnet.arc.network`) | P V | no | optional (default is that URL) |
+| `ARC_RPC_URL` | Arc docs (`https://rpc.testnet.arc.io`) | P V | no | optional (default is that URL) |
 | `ARC_CHAIN_ID` | `5042002` | P V | no | optional |
 | `USDC_ADDRESS` | `0x3600000000000000000000000000000000000000` | P V | no | optional |
 | `ESCROW_ADDRESS` | Output of the contracts deploy | P V | no | REQUIRED (money endpoints answer 503 without it) |
@@ -51,6 +51,8 @@ Client-side (inlined at build): `NEXT_PUBLIC_ARC_RPC_URL`, `NEXT_PUBLIC_ARC_CHAI
 
 ## World ID (staging)
 
+Status 2026-11-06: Developer Portal app 'Clippo', RP and three actions created; `WORLD_ID_APP_ID`, `WORLD_ID_RP_ID` and `WORLD_ID_SIGNING_KEY` are set in `web/.env.local`. Adding them to Vercel is TODO.
+
 | Name | Comes from | Scope | Secret | Need |
 |---|---|---|---|---|
 | `WORLD_ID_APP_ID` | World Developer Portal (staging app) | P V | no | REQUIRED for creator sign-up |
@@ -61,6 +63,22 @@ Client-side (inlined at build): `NEXT_PUBLIC_ARC_RPC_URL`, `NEXT_PUBLIC_ARC_CHAI
 | `NEXT_PUBLIC_WORLD_LEVEL` | `orb` (default) or `device` | P V | no | optional |
 | `WORLD_ID_ONCHAIN_VERIFIER`, `WORLD_ID_ONCHAIN_RPC_URL` | World docs | P V | no | optional |
 | `WORLD_CHAIN_RPC_URL` | World Chain RPC | P V | no | optional (AgentBook lookup) |
+
+## World auth (auth.world.org step-up, Agent Pass)
+
+Implemented in code, not yet run live. Register a client at auth.world.org (sandbox) first. BLOCKED as of 2026-11-06: the auth.world.org portals accept only an enterprise Google account (a personal Gmail got 403 `account_not_eligible`), so these variables are NOT configured and the step-up gate is off; ask a World mentor for eligibility or a pre-created sandbox client (see `WORLD_USER_TODO.md`, 'Blocker: auth.world.org access'). Demo fallback only if blocked: `WORLD_AUTH_POLICY=either` lets agent proposals be released with the IDKit proof; this is NOT the official Agent Pass integration and must be stated as such.
+
+| Name | Comes from | Scope | Secret | Need |
+|---|---|---|---|---|
+| `WORLD_AUTH_CLIENT_ID` | auth.world.org client | P V | no | REQUIRED for the step-up gate |
+| `WORLD_AUTH_CLIENT_SECRET` | auth.world.org client | P V | **yes** | REQUIRED (server-only) |
+| `WORLD_AUTH_ISSUER` | `https://sandbox.auth.world.org` for the sandbox | P V | no | optional (default `https://auth.world.org`; set the sandbox issuer for the demo) |
+| `WORLD_AUTH_REDIRECT_URI` | `https://<host>/api/auth/world/callback`; exact HTTPS URL registered with the client (localhost http is likely unsupported: use the deployed URL or an HTTPS tunnel) | P V | no | REQUIRED (one URL per host; Preview needs its own client or skip) |
+| `WORLD_AUTH_TOKEN_AUTH` | token endpoint auth method of the client | P V | no | optional (default `basic`; `post` sends `client_secret` in the form) |
+| `WORLD_AUTH_ACR` | required `acr` for step-up | P V | no | optional (default `https://world.org/oidc/acr/orb`; whether the sandbox issues it is unverified) |
+| `WORLD_AUTH_POLICY` | `agent-required` (default; agent proposals need the step-up), `either`, `required`. Unconfigured `WORLD_AUTH_*` falls back to `agent-required` | P V | no | optional |
+
+Check with `npm run doctor` (fetches `{issuer}/.well-known/openid-configuration`).
 
 ## AI
 
