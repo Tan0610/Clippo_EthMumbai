@@ -79,7 +79,7 @@ model User {
   role             Role
   wallet           String       @unique
   worldIdNullifier String?      @unique
-  /// World IdP account link: exact `iss|sub` of the validated ID token (sub is opaque and case-sensitive). Set on the first successful step-up.
+  /// LEGACY, unused. Added by migration 20261106000000_world_idp_identity (already applied on the clippo-cre database). Kept so the schema matches the database; the step-up now uses worldAuthIss / worldAuthSub.
   worldIdpIdentity String?      @unique
   verified         Boolean      @default(false)
   createdAt        DateTime     @default(now())
