@@ -44,7 +44,7 @@ Track status at the start:
 
 ## Log
 
-### 6. Docs corrected and a focus guide added, commit pending
+### 6. Docs corrected and a focus guide added, commit `7a93a2c`
 
 - **What:** two review passes fixed false and stale claims in the README, the track write-ups, the Arc submission file, the architecture text, the API reference and the deploy docs. Then a second pass removed contradictions between the docs. Added `docs/FOCUS.md` (plan, rules, what we may claim, order of work, prize checklists). Merged `main`'s two docs commits into this branch (`a7b30b9`) so their Arc claims could be corrected here.
 - **Main corrections:**
