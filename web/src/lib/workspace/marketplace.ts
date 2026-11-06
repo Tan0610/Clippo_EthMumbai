@@ -1,5 +1,6 @@
 import type { Campaign } from "@prisma/client";
 import { db } from "../db";
+import { confirmedByPair, NO_CONFIRMED, pairKey, sumConfirmed, withPending, type ConfirmedFields } from "../confirmed";
 import { creatorEarnings } from "../earnings";
 import { creatorStatsMap, type CreatorStats } from "./rank";
 import { round2 } from "./money";
@@ -194,11 +195,18 @@ export function costPer1k(spend: number, views: number): number | null {
   return views > 0 ? round2((spend / views) * 1000) : null;
 }
 
+/** Campaign-level Confirmed block: sums the creators' confirmed views; HUMAN_SPLIT campaigns have no CRE views. */
+function campaignConfirmed(payoutMode: string, creators: ConfirmedFields[], polledViews: number): ConfirmedFields {
+  if (payoutMode === "HUMAN_SPLIT") return { ...NO_CONFIRMED, pendingViews: 0 };
+  return withPending(sumConfirmed(creators), polledViews);
+}
+
 export async function campaignerDashboard(campaignerId: string) {
   const campaigns = await db.campaign.findMany({ where: { campaignerId }, orderBy: { createdAt: "desc" } });
   const ids = campaigns.map((c) => c.id);
   const { clips } = await loadClips(ids);
   const payouts = await db.payout.findMany({ where: { campaignId: { in: ids } } });
+  const confirmed = await confirmedByPair({ campaignId: { in: ids } });
   const creatorIds = [...new Set(clips.map((k) => k.creatorId))];
   const [users, profiles] = await Promise.all([
     db.user.findMany({ where: { id: { in: creatorIds } }, select: { id: true, wallet: true, verified: true } }),
@@ -228,6 +236,7 @@ export async function campaignerDashboard(campaignerId: string) {
         displayName: profiles.find((p) => p.userId === cid)?.displayName ?? null,
         verifiedBadge: u?.verified ?? false,
         views: cViews,
+        ...withPending(confirmed.get(pairKey(c.id, cid)) ?? NO_CONFIRMED, c.payoutMode === "HUMAN_SPLIT" ? 0 : cViews),
         approvedClips: theirs.length,
         clipsSubmitted: mine.filter((k) => k.creatorId === cid).length,
         cost,
@@ -249,6 +258,7 @@ export async function campaignerDashboard(campaignerId: string) {
       allocated: round2(paid),
       remaining: round2(Math.max(0, c.poolSize - spend)),
       views,
+      ...campaignConfirmed(c.payoutMode, creators, views),
       clips: {
         approved: approved.length,
         rejected: mine.filter((k) => k.result === "REJECT").length,
@@ -269,6 +279,8 @@ export async function campaignerDashboard(campaignerId: string) {
       budget: round2(t((i) => i.budget)),
       spend,
       views,
+      confirmedViews: t((i) => i.confirmedViews),
+      pendingViews: t((i) => i.pendingViews),
       approvedClips: t((i) => i.clips.approved),
       rejectedClips: t((i) => i.clips.rejected),
       pendingReviewClips: t((i) => i.clips.pendingReview),

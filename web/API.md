@@ -121,7 +121,8 @@ Query: `mine=true` (campaigner: own campaigns, all statuses; needs sign-in), `st
 Default: only `APPROVED` campaigns (admin sees all). Res 200: `{ "campaigns": Campaign[] }` (with `submissionCount`).
 
 ### GET /api/campaigns/:id  `[public for APPROVED/CLOSED; owner/admin for others]`
-Res 200: `{ "campaign": Campaign, "campaigner": {id, wallet, verified}, "performance": { "totalViews": number, "approvedClips": number, "viewTarget": number|null } }`
+Res 200: `{ "campaign": Campaign, "campaigner": {id, wallet, verified}, "performance": { "totalViews": number, "confirmedViews": number, "pendingViews": number, "proof": Proof|null, "approvedClips": number, "viewTarget": number|null } }`
+`confirmedViews` = views the Chainlink CRE workflow reported on-chain (latest `ViewsReported` per creator, summed); `pendingViews` = `max(0, totalViews - confirmedViews)` (Clippo's own YouTube count not yet confirmed); `proof` = the latest report that added views. HUMAN_SPLIT campaigns: `0`, `0`, `null` (CRE does not report them). `Proof` = `{ txHash, blockNumber, reportedAt /*ISO*/, explorerUrl }`.
 
 ### GET /api/campaigns/:id/fund  `[campaigner, owner]`  (fund preview)
 Res 200: `{ "campaign", "preview": { "poolAmount", "campaignerFeeBps", "campaignerFee", "netPool", "totalToApprove", "highValue" }, "fees": Fees, "chain": PublicChainConfig, "createCampaignArgs": { "mode": 0|1|2, "ratePer1kViews": "base units", "poolAmount": "base units", "deadline": unix, "requireAdminApproval": boolean, "metadataURI": "clippo://campaign/<id>" } }`.
@@ -174,11 +175,14 @@ Res 201:
 
 ### POST /api/channels  `[creator]`
 Req: `{ "platform": "YOUTUBE", "handle": string }` (leading `@` optional)
-Res 201 (200 if already exists for you): `{ "channel": Channel }`. Tell the creator to put `channel.verificationCode` in their channel bio/description.
+Res 201 (200 if already exists for you): `{ "channel": Channel & { needsReverify: boolean } }`. Tell the creator to put `channel.verificationCode` in their channel bio/description. The code is wallet-bound: `clippo:<creator wallet, lowercase>` (it used to be a random `clippo-xxxxxxxx`). The Chainlink CRE nodes check that exact string in the public bio, so Clippo cannot attach a channel to a wallet that did not publish it. An existing channel that is not verified yet is moved to the new code silently.
 Errors: 409 `CHANNEL_TAKEN`.
 
 ### GET /api/channels  `[creator]`
-Res 200: `{ "channels": Channel[] }`
+Res 200: `{ "channels": (Channel & { needsReverify: boolean })[] }`. `needsReverify` is true for a VERIFIED YouTube channel that still holds an old random code: CRE cannot bind it to a wallet, so its views stay pending until it is verified again with the new code (see `upgrade-code` below).
+
+### POST /api/channels/:id/upgrade-code  `[creator, World-ID verified, channel owner]`
+Moves a YouTube channel to the wallet-bound code and sets `verified: false` until `POST /api/channels/:id/verify` finds the new code in the bio. Res 200: `{ "channel": Channel & { needsReverify: false } }`. 400 `NOT_SUPPORTED` for X and Instagram; 404 for a channel that is not yours. No-op if the channel already has the new code.
 
 ### POST /api/channels/:id/verify  `[creator]`
 Checks the code is in the channel bio. Res 200: `{ "channel": Channel }` (verified true). Error 422 `CODE_NOT_FOUND`.
@@ -210,6 +214,9 @@ Res 200: `{ "verdict": Verdict }` (`decidedBy: "HUMAN"`; a pending appeal become
 ### GET /api/snapshots/daily  `[public, read-only]`  (consumed by the Chainlink CRE workflow)
 Frozen feed for one COMPLETED UTC day (default: yesterday). Query: `day=YYYY-MM-DD` for an older day; a bad day or a day that is not over yet is 400 `BAD_REQUEST`. Immutable once the day is over, so every CRE node reads identical bytes. Res 200: `{ "day": "YYYY-MM-DD", "hash": "<sha256 hex of the exact JSON of rows>", "rows": [ { "campaignId": "7", "creator": "0xwallet", "cumulativeViews": 12345 } ] }`. `hash` is also the `ETag` header. `rows` has the same shape and rules as `/latest` below, as of the end of `day`.
 
+### GET /api/snapshots/clips  `[public, read-only]`  (consumed by the Chainlink CRE workflow, v2)
+Clip manifest for one COMPLETED UTC day (default: yesterday; same `day` rules and 400 `BAD_REQUEST` as `/daily`). Res 200: `{ "day": "YYYY-MM-DD", "hash": "<sha256 of the clips JSON>", "clips": [ { "campaignId": "12" /*numeric on-chain id*/, "creator": "0x.." /*lowercase*/, "videoId": "", "channelId": "UC.." } ] }`, sorted by (campaignId, creator, videoId); `hash` is also the ETag. It says WHICH clips to read, never how many views: the CRE nodes read the views from YouTube themselves. A clip is listed only if: its verdict is APPROVE and was made before the end of `day`; it is LIVE; its campaign is APPROVED, PER_VIEW or POOL_SHARE, with an on-chain id; its channel is a verified YouTube channel with an external id and the wallet-bound code of that creator; and it is not under an OPEN or CONFIRMED `VIEW_ANOMALY` flag.
+
 ### GET /api/snapshots/latest  `[public, read-only]`  (live view, not read by the CRE workflow)
 Current cumulative views, for inspection. The workflow reads `/api/snapshots/daily` above. Res 200 (bare array, not wrapped):
 ```json
@@ -237,7 +244,7 @@ Req: `{ "action": "DISMISS"|"CONFIRM" }`. Res 200: `{ "flag": FraudFlag }`. DISM
 ## Chain
 
 ### GET /api/chain/config  `[public]`
-Res 200: `{ "chain": { "enabled", "chainId", "rpcUrl", "usdc", "escrow": "0x.."|null, "usdcDecimals": 6, "faucetUrl" }, "fees": { "campaignerBps", "creatorBps", "source": "chain"|"config", "retentionDays", "highValueThresholdUsdc" } }`. Fees are per side in bps (max 50), read from the escrow (cached 60 s) with env fallback `PLATFORM_CAMPAIGNER_FEE_BPS`/`PLATFORM_CREATOR_FEE_BPS` (default 25/25).
+Res 200: `{ "chain": { "enabled", "chainId", "rpcUrl", "usdc", "escrow": "0x.."|null, "usdcDecimals": 6, "explorerBase": "https://explorer.testnet.arc.io" /*EXPLORER_BASE_URL*/, "faucetUrl" }, "fees": { "campaignerBps", "creatorBps", "source": "chain"|"config", "retentionDays", "highValueThresholdUsdc" } }`. Fees are per side in bps (max 50), read from the escrow (cached 60 s) with env fallback `PLATFORM_CAMPAIGNER_FEE_BPS`/`PLATFORM_CREATOR_FEE_BPS` (default 25/25).
 
 ### POST /api/chain/sync  `[admin, or header x-cron-secret: $CRON_SECRET]`
 Req (optional): `{ "maxBlocks"?: number }`. Indexes new escrow events since the stored cursor (from `ESCROW_DEPLOY_BLOCK`) idempotently (unique on tx hash + log index): `CampaignCreated` (only if it matches a DRAFT campaign: funder wallet, amount, mode, `metadataURI`) -> FUNDED; `CampaignApproved` -> APPROVED; `CampaignRejected` -> REJECTED; `CampaignClosed` -> CLOSED; `CreatorCredited` -> payout credit (+ `releaseAt`); `Claimed` -> payout claimed; `SplitFinalized` -> proposal FINALIZED; `HumanAttested` -> campaign attestation; `DisputeResolved` (upheld only) -> payout reduced by the removed credit. Res 200: `{ "head", "lastBlock", "processed", "applied" }`. 503 `CHAIN_NOT_CONFIGURED` without `ESCROW_ADDRESS`. Run it on a schedule (`GET /api/cron/chain-sync` with the cron secret does this) so credits/claims made outside the UI show up. `GET /api/creator/earnings` also runs a bounded sync (25,000 blocks) before it answers, and ignores a failure.
@@ -255,12 +262,12 @@ Client helpers for the UI: `src/lib/chain/client.ts` (`getChainConfig`, `connect
 ### GET /api/creator/earnings  `[creator]`
 Res 200:
 ```json
-{ "campaigns": [ { "campaignId": "", "title": "", "payoutMode": "", "approvedClips": 2, "views": 1000, "estimatedEarnings": 12.5, "estimatedNet": 12.47, "creatorFeeBps": 25 } ],
+{ "campaigns": [ { "campaignId": "", "title": "", "payoutMode": "", "approvedClips": 2, "views": 1000, "confirmedViews": 800, "pendingViews": 200, "proof": { "txHash": "0x..", "blockNumber": 123, "reportedAt": "2026-01-01T00:00:00.000Z", "explorerUrl": "https://explorer.testnet.arc.io/tx/0x.." }, "estimatedEarnings": 12.5, "estimatedNet": 12.47, "creatorFeeBps": 25 } ],
   "payouts": [ Payout ],
-  "totals": { "estimated": 12.5, "estimatedNet": 12.47, "claimable": 0, "claimed": 0, "frozen": 0 },
+  "totals": { "confirmedViews": 800, "pendingViews": 200, "estimated": 12.5, "estimatedNet": 12.47, "claimable": 0, "claimed": 0, "frozen": 0 },
   "fees": { "creatorBps": 25, "source": "chain", "retentionDays": 7 } }
 ```
-`estimatedEarnings` is gross (null for HUMAN_SPLIT: depends on the approved split); `estimatedNet` is after the creator-side platform fee (campaign snapshot bps, else current). PER_VIEW = views/1000 x rate, scaled down if the usable pool (pool minus campaigner fee) would be exceeded; POOL_SHARE = usable pool x share of views (an estimate; older rows with an APPROVED_CLIPS basis are estimated by approved clips, but new campaigns are always VIEWS). Deleted clips earn nothing. `totals.claimable` is gross, unfrozen and unclaimed (PER_VIEW credits are claimable only after `payout.releaseAt`, the 7-day retention window); `frozen` is balance held back by anti-fraud review.
+`confirmedViews` = views the Chainlink CRE workflow reported on-chain for you in that campaign (the highest `cumulativeViews` in the indexed `ViewsReported` events); `pendingViews` = `max(0, views - confirmedViews)`, Clippo's own count that the chain has not confirmed yet; `proof` = the latest report that added views, or `null`. Only confirmed views are credited by the escrow. HUMAN_SPLIT: `0`, `0`, `null`. `estimatedEarnings` is gross (null for HUMAN_SPLIT: depends on the approved split); `estimatedNet` is after the creator-side platform fee (campaign snapshot bps, else current). PER_VIEW = views/1000 x rate, scaled down if the usable pool (pool minus campaigner fee) would be exceeded; POOL_SHARE = usable pool x share of views (an estimate; older rows with an APPROVED_CLIPS basis are estimated by approved clips, but new campaigns are always VIEWS). Deleted clips earn nothing. `totals.claimable` is gross, unfrozen and unclaimed (PER_VIEW credits are claimable only after `payout.releaseAt`, the 7-day retention window); `frozen` is balance held back by anti-fraud review.
 
 ### GET /api/payouts/:id/claim  `[creator owner]`  (claim preview)
 Res 200: `{ "payout": Payout, "preview": { "gross", "creatorFeeBps", "fee", "net" }, "claimable": boolean, "frozen": boolean, "frozenReason": string|null, "releaseAt": string|null, "retentionDays": number, "chain": PublicChainConfig, "onchain": { "functionName": "claimFor", "args": [onchainId, creatorWallet] } | null }`. `gross` is the outstanding amount (`amount - claimedAmount`); the creator-side fee is deducted on-chain at claim time. The creator does not have to send the transaction: `POST` below makes the backend wallet call `claimFor`. `claimable` is false while frozen, inside the retention window, or already claimed.
@@ -439,15 +446,16 @@ Query `sort=views|earnings` (default views), `limit` (default 20). Over APPROVED
 ```ts
 { campaigns: [{ campaignId, title, status, payoutMode, budget /*poolSize*/, spend, allocated, remaining, views,
                 clips: { approved, rejected, pendingReview, total }, costPer1kViews: number|null }],
-  totals: { campaigns, budget, spend, views, approvedClips, rejectedClips, pendingReviewClips, costPer1kViews } }
+  totals: { campaigns, budget, spend, views, confirmedViews, pendingViews, approvedClips, rejectedClips, pendingReviewClips, costPer1kViews } }
 ```
+Each campaign item also has `confirmedViews`, `pendingViews`, `proof` (the creators' confirmed views summed; `proof` = latest report), and each `creators[]` entry has the same three fields for that creator. HUMAN_SPLIT: `0`, `0`, `null`.
 `allocated` = payouts created. `spend` = `allocated` for HUMAN_SPLIT, else max(allocated, estimated accrued earnings). `views` = latest cumulative views of approved clips. `costPer1kViews = spend / views x 1000` (null when no views).
 
 ### GET /api/dashboard/creator  `[creator]`
 ```ts
 { verifiedBadge, rank: { approved, rejected, pending, reliability, tier, rank },
-  totals: { views, clipsSubmitted, approvedClips, rejectedClips, pendingReviewClips, activeHires, estimated, claimable, claimed },
-  campaigns: /* as /api/creator/earnings */, payouts: Payout[] }
+  totals: { views, confirmedViews, pendingViews, clipsSubmitted, approvedClips, rejectedClips, pendingReviewClips, activeHires, estimated, claimable, claimed },
+  campaigns: /* as /api/creator/earnings, incl. confirmedViews, pendingViews, proof */, payouts: Payout[] }
 ```
 New error codes: `BAD_RATE`(400), `BRIEF_REQUIRED`/`NO_APPROVED_CREATORS`(409), `NOT_HIRED`(403).
 <!-- END: CREATOR WORKSPACE + MARKETPLACE DATA -->
