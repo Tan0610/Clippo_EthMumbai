@@ -1,6 +1,13 @@
 # Local end-to-end money-flow test (`npm run e2e:chain`)
 
-Proves contracts + backend indexer + CRE-style report delivery work together on a local chain, with no external credentials.
+Proved (against the OLD escrow, before commit 498f649) that contracts + backend indexer + CRE-style report delivery worked together on a local chain, with no external credentials.
+
+> **STALE, not updated for the new enforcing escrow.** `web/scripts/e2e-chain.mjs` was last changed in commit 72cc623 and has NOT been updated for 498f649 (World ID and CRE enforced in the contract, disputes, `claimFor`, `humanAttestor`) or 292d107 (app wiring). It has not been re-run since. Not proven: that it passes today. Expected breakage, from reading the script against the new code (not by running it):
+> - It deploys with `Deploy.s.sol` but never sets `HUMAN_ATTESTOR_ADDRESS`, which `Deploy.s.sol` now requires (it reverts `Deploy: missing required env HUMAN_ATTESTOR_ADDRESS`). The run stops at the deploy step.
+> - It calls `approveCampaign(id, attestation)` / `approveSplit(..., attestation)` with a bytes32 attestation and checks `HumanAttested`. The new escrow takes a signed `HumanProof` struct (`human`, `expiresAt`, `signature`) from the Clippo wallet, and the plain `approveCampaign(id)` reverts for high-value campaigns. `HumanAttested` is still emitted, but now carries `proof.human`, so the script's attestation checks no longer match.
+> - It calls `setWeights` for POOL_SHARE. That function was removed; weights now come only from CRE reports.
+> - It never links creator wallets on-chain (`registerHuman`) and has no `HUMAN_ATTESTOR_PRIVATE_KEY`, so `reportViews` would revert `NotHuman`. Retention and grace are now per campaign, and creators' `claim` / `claimFor` flow, disputes and `/api/chain/disputes` are not covered at all.
+> - The scenario table below and the "48 passed, 0 failed" result describe the old escrow only. It is not evidence for the new contract. The new escrow is not deployed anywhere.
 
 ```
 export PATH="$HOME/.foundry/bin:$PATH"     # forge + anvil
@@ -11,7 +18,7 @@ cd web && npm run e2e:chain                # ~1-2 min, exits non-zero on any fai
 | Piece | How |
 |---|---|
 | Chain | `anvil --chain-id 31337` (fresh each run) |
-| Contracts | the real `contracts/script/DeployMock.s.sol` (USDC) + `Deploy.s.sol` with `ALLOW_ANY_CHAIN=true`: escrow, report receiver, referral, creator profile. Receiver runs in **strict** mode (`EXPECTED_WORKFLOW_OWNER` set, no `INSECURE_SKIP_WORKFLOW_CHECK`); admin != deployer so ownership transfer is exercised |
+| Contracts | the real `contracts/script/DeployMock.s.sol` (USDC) + `Deploy.s.sol` with `ALLOW_ANY_CHAIN=true` (no `HUMAN_ATTESTOR_ADDRESS`, so this step fails against today's script): escrow, report receiver, referral, creator profile. Receiver runs in **strict** mode (`EXPECTED_WORKFLOW_OWNER` set, no `INSECURE_SKIP_WORKFLOW_CHECK`); admin != deployer so ownership transfer is exercised |
 | DB | in-memory PGlite Postgres + `prisma migrate deploy` (never touches `.pgdata`) |
 | Backend | `next dev` (`NEXT_DIST_DIR=.next-e2e`) with `ARC_RPC_URL`, `ARC_CHAIN_ID=31337`, `ESCROW_ADDRESS`, ... pointing at anvil |
 | External services | explicit **test doubles** (World ID, AI verifier/wizard, YouTube, chain signer) enabled by `CLIPPO_E2E_DOUBLES=1`, see below. The chain, SIWE, indexer, snapshots and fees are all real |
@@ -21,7 +28,7 @@ Report delivery: the script reads `GET /api/snapshots/latest`, ABI-encodes `(uin
 ## Test-double switch (impossible in production)
 `web/src/instrumentation.ts` installs `web/src/test/e2e-doubles.ts` only when `CLIPPO_E2E_DOUBLES=1`. Under `NODE_ENV=production` the server **refuses to boot** with that flag, and `setOverride()` itself throws in production (unit test: `src/instrumentation.test.ts`). The YouTube double reads views / "clip gone" from a JSON control file (`E2E_CONTROL_FILE`) that the script rewrites between steps.
 
-## Scenarios and results (last run: 48 passed, 0 failed)
+## Scenarios and results (last run: 48 passed, 0 failed, against the old escrow; not re-run since)
 Balances (USDC, 6 decimals) of campaigners, creators, treasury and escrow, plus `treasuryAccrued`, are asserted exactly after every money-moving step via a JS ledger.
 
 | Scenario | Step | Result |
@@ -61,7 +68,7 @@ Balances (USDC, 6 decimals) of campaigners, creators, treasury and escrow, plus 
 | 3. POOL_SHARE (weights from views, distribution at close) | create + fund 300 USDC POOL_SHARE (VIEWS); admin approves (non high-value) | PASS |
 | 3. POOL_SHARE (weights from views, distribution at close) | A and B submit clips; snapshots 3000 / 1000 views appear in the feed | PASS |
 | 3. POOL_SHARE (weights from views, distribution at close) | a PER_VIEW report for a POOL_SHARE campaign is rejected by the escrow (BadMode) without blocking the batch | PASS |
-| 3. POOL_SHARE (weights from views, distribution at close) | campaigner sets weights 3000:1000 on-chain; stranger cannot (NotApprover) | PASS |
+| 3. POOL_SHARE (weights from views, distribution at close) | old escrow only: campaigner set weights 3000:1000 on-chain; stranger could not (NotApprover). `setWeights` is gone in the new escrow | PASS |
 | 3. POOL_SHARE (weights from views, distribution at close) | deadline passes; campaigner closes: whole pool distributed 3:1, rounding dust refunded (exact) | PASS |
 | 3. POOL_SHARE (weights from views, distribution at close) | indexer credits payouts; both claim after close (creator-side fee floors like the contract) | PASS |
 | 4. Rejection with full refund | fund 100 USDC then admin rejects on-chain: campaigner refunded in full INCLUDING the fee | PASS |
@@ -87,4 +94,4 @@ Balances (USDC, 6 decimals) of campaigners, creators, treasury and escrow, plus 
 - Anvil time travel moves chain time but not the server wall clock. The claim *preview* `claimable` flag (which compares `releaseAt` with `Date.now()`) therefore stays false after a warp; only the on-chain claim and `POST /claim` are asserted. In production both clocks agree. The script also sets the on-chain deadline from chain time rather than the preview's wall-clock deadline for the same reason.
 - A deleted-clip freeze is enforced at the API only: the contract still lets the creator claim matured credits directly (known, documented design: the retention window is the protection).
 - Anomaly (view spike) holds are disabled (`ANOMALY_MIN_DELTA` huge) to keep numbers deterministic; they have their own unit tests. Referral and creator-profile contracts are deployed and checked for code only.
-- PoolShare weights are set directly on-chain by the campaigner (there is no API route for `setWeights`).
+- PoolShare weights: in the OLD escrow the campaigner set them on-chain with `setWeights` (no API route existed). In the new escrow `setWeights` is gone and weights come only from CRE `reportViews` (`contracts/src/ClippoEscrow.sol:428`). The script's PoolShare scenario (scenario 3) therefore no longer applies.
