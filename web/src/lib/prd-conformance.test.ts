@@ -203,7 +203,7 @@ describe("PRD 4.1 channel ownership proof with several channels; unique human ga
     for (const [platform, handle] of [["YOUTUBE", "alpha"], ["X", "beta"], ["INSTAGRAM", "gamma"]] as const) {
       const r = await j(await add(req("/api/channels", W.cre2, { platform, handle })));
       expect(r.status).toBe(201);
-      expect(r.body.channel.verificationCode).toMatch(/^clippo-/); // the code the creator places in the bio
+      expect(r.body.channel.verificationCode).toBe(`clippo:${W.cre2.toLowerCase()}`); // the code the creator places in the bio
       expect(r.body.channel.verified).toBe(false);
       ids.push(r.body.channel.id);
     }
