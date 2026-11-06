@@ -45,7 +45,23 @@ Track status at the start:
 
 ## Log
 
-### 9. CRE scope defined, commit pending
+### 11. CRE workflow v2: nodes read YouTube themselves, commit pending
+
+- **What:** `cre/workflows/clippo-settlement/main.ts` now fetches the clip manifest (`/api/snapshots/clips`), reads the YouTube key from the CRE secret `YOUTUBE_API_KEY`, and every node calls `videos.list` and `channels.list` (key in the `x-goog-api-key` header only). A clip is kept only if its video sits on the manifest's channel and the channel bio holds `clippo:<wallet>`. View counts go through `median` consensus in one flat record (`kept` identical plus `v0..vN` medians). The rest (cron and HTTP triggers, staleness and zero-receiver guards, chunking, receipt check) is unchanged.
+- **Why:** the earlier workflow only read Clippo's own server, so consensus proved nothing.
+- **Files:** `cre/workflows/clippo-settlement/{main.ts,youtube.ts,youtube.test.ts,config.*.json,workflow.yaml}`, `cre/secrets.yaml`, `cre/scripts/{mock-backend.mjs,simulate-local.sh}`, `cre/package.json`, `cre/.env.example`, `cre/README.md`.
+- **Tests:** `npm run typecheck` clean; `npm test` 22 pass (9 old, 13 new); `npm run compile` builds a 2.6 MB WASM. `bash scripts/simulate-local.sh` (local anvil fork of Arc, mock backend, FAKE YouTube key) exited 0: 5 clips in the manifest, 3 kept, 2 dropped with a logged reason (wrong bio code; video on another channel); `cast call` showed campaign 7 creators credited 1200 and 300 views, campaign 12 capped by the pool; a replay credited nothing more; an unlinked wallet failed with `NotHuman`.
+- **Not proven:** nothing ran against real YouTube or a real key; the real `/api/snapshots/clips` route was not used by this run (the mock served the contract shape); the simulator is one node, so median and `identical` never ran across nodes; a wrong-key or YouTube-5xx run end to end was not done; nothing on real Arc.
+
+### 10. Backend: confirmed views, clip manifest, wallet-bound channel codes, commit pending
+
+- **What:** new `ViewsReport` table and migration; the indexer stores each on-chain `ViewsReported` event; `web/src/lib/confirmed.ts` computes Confirmed (highest reported cumulative) and Pending (Clippo count minus confirmed) with a proof link; additive fields `confirmedViews`, `pendingViews`, `proof` on creator earnings, creator and campaigner dashboards and `GET /api/campaigns/:id`; `chain.explorerBase` in `/api/chain/config`; new `GET /api/snapshots/clips` (day-frozen manifest for CRE); channel codes are now `clippo:<wallet>`, with `needsReverify` and `POST /api/channels/:id/upgrade-code`. No contract change.
+- **Why:** the app must show the views CRE confirmed, and CRE needs a list of clips plus a wallet-bound way to prove channel ownership.
+- **Files:** `web/prisma/schema.prisma`, `web/prisma/migrations/20261106120000_views_report/`, `web/src/lib/{confirmed,channel-code,clip-manifest,earnings}.ts`, `web/src/lib/workspace/marketplace.ts`, `web/src/lib/chain/{indexer,config}.ts`, `web/src/app/api/{campaigns/[id],channels,channels/[id]/upgrade-code,snapshots/clips}`, `web/API.md`, `web/.env.example`, tests below.
+- **Tests:** 2 new integration test files (7 tests) plus 1 old assertion updated to the new code format. Full `npm test`: 311 tests, all pass after that update (the one failure before it was the old `clippo-` prefix check). `npm run typecheck` clean, lint clean on the changed files. Migration applies on the throwaway Postgres used by the tests.
+- **Not proven:** nothing ran against a real database other than the test Postgres, a deployed backend, or real on-chain events (the tests feed decoded events). Existing verified channels get `needsReverify`; no screen uses it yet (frontend track).
+
+### 9. CRE scope defined, commit `caff4e2`
 
 - **What:** wrote `docs/CRE_SCOPE.md` and rebuilt the milestone section of `docs/CRE_PLAN.md` around it. Decisions in the scope: no smart contract change (the `ViewsReported` event, `reportedViews`, and the workflow pin and lock setters already exist); backend adds a `ViewsReport` table, indexer case, additive API fields, a day-frozen clip manifest route and wallet-bound channel codes; frontend adds one `ConfirmedViews` component and shows Confirmed vs Pending on the creator ledger, brand desk, clip detail and channel screens; the CRE workflow reads YouTube itself. Three tracks on disjoint files with a frozen data contract and sync points S0 to S5, plus the list of what the owner provides and when.
 - **Why:** the owner asked to fix the scope across frontend, backend and contract first, run frontend and backend in parallel, and list owner dependencies before building.
