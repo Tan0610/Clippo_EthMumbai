@@ -1,6 +1,6 @@
 {
   "schedule": "0 30 0 * * *",
-  "backendUrl": "https://clippo-six.vercel.app",
+  "backendUrl": "https://clippo-cre.vercel.app",
   "manifestPath": "/api/snapshots/clips",
   "youtubeApiBase": "https://www.googleapis.com/youtube/v3",
   "feedPath": "/api/snapshots/daily",
