@@ -9,5 +9,12 @@
     "isTestnet": true,
     "receiverAddress": "0x0000000000000000000000000000000000000000",
     "gasLimit": "3000000"
-  }
+  },
+  "requireHttpAuthorizedKeys": true,
+  "httpAuthorizedKeys": [
+    {
+      "type": "KEY_TYPE_ECDSA_EVM",
+      "publicKey": "TODO_REPLACE_WITH_AUTHORIZED_EVM_ADDRESS"
+    }
+  ]
 }
