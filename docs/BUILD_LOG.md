@@ -45,7 +45,14 @@ Track status at the start:
 
 ## Log
 
-### 14. Browser end-to-end check of the frontend against the real backend, commit pending
+### 15. First real YouTube read through the workflow, on a local fork, commit pending
+
+- **What:** the owner created a YouTube Data API key (saved in `cre/.env` and `web/.env.local`, both git-ignored; an extra pasted fragment was found and trimmed, the key itself never shown), used the test channel `@visualsbyanii` (UCIZw3qclbEDMa4TCFMAatww), and put `clippo:0x8cf9113b19aa9d169365ca7b1bb9d7b957b460e5` in its bio. Checked through the API: the exact line is in the bio and the video `vWk4YV_dbsE` ("FLOW FORTE HACK SUBMISSION") is public on that channel. Added `cre/scripts/simulate-real-youtube.sh` (local fork, mock manifest with one real clip, REAL YouTube API, `--config` override), a `realyt` mode in `mock-backend.mjs`, and `EXTRA_CREATORS` in `local-chain.sh`.
+- **Result:** `cre workflow simulate --broadcast` on the local fork: manifest 1 clip, "youtube agreed: kept 1/1 clips", 1 report, 0 failed rows. `cast call` on the fork escrow: `reportedViews` = 3 (the video's real count at that time) and `credited` = 30000 units = 0.03 USDC at the fork's $10 per 1,000 views. No API key appears in the saved output. Output: `docs/tracks/cre-simulation-real-youtube.txt`.
+- **Found:** two earlier attempts timed out at the write step because the public Arc RPC (`rpc.testnet.arc.network`) answered 429 rate limit to the local fork; the run passed through `rpc.testnet.arc.io` (set `ARC_RPC=https://rpc.testnet.arc.io`). The CRE CLI also timed out once reaching its own API; a retry worked.
+- **Not proven:** this is still a local fork with a mock manifest, one CRE node, and a local simulation forwarder. Nothing ran on real Arc, against the deployed backend's manifest route, or on a deployed workflow. The video has only 3 views, so the amounts are tiny.
+
+### 14. Browser end-to-end check of the frontend against the real backend, commit `ad3c7d9`
 
 - **What:** ran the whole chain locally and checked the screens in a headless Chromium. Anvil fork of Arc, fresh contracts, `cre workflow simulate --broadcast` (3 of 5 clips kept, 1 report, 0 failed rows), a local database seeded with `web/scripts/e2e-confirmed-seed.mjs`, `next dev` pointed at the fork, `POST /api/chain/sync` (real indexer), then `web/scripts/e2e-confirmed-ui.mjs` (new; signs in with the dev wallet bypass).
 - **Result:** 14 of 14 checks passed. Creator b: API confirmed 5300 / pending 750; the proof link is the exact delivery tx of the CRE run. Brand: confirmed 6500 / pending 1050. The ledger and desk show Confirmed, Pending, a Chainlink badge, a proof link and the one-line explainer. The clip slip shows Confirmed with a proof link. An old-format verified channel is flagged `needsReverify`; the Account screen offers "Get my new code"; after the click the wallet-bound code `clippo:<wallet>` is on screen and the API shows the channel unverified until the bio check.

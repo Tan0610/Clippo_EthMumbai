@@ -17,6 +17,7 @@
 //   stale    day = 5 days ago    (workflow must reject)
 //   large    --large-rows N synthetic rows on campaigns 7 and 12 (workflow must batch)
 //   bump     fixture with views +100 on the first row (simulates the next day's snapshot)
+//   realyt   one real clip: --real-wallet 0x.. --real-video ID --real-channel UC.. [--real-campaign 7] (use with scripts/simulate-real-youtube.sh)
 //   unlinked fixture plus a row whose creator has no World ID link (escrow reverts NotHuman, receiver emits ItemFailed)
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -74,6 +75,8 @@ function world() {
     { campaignId: "12", creator: B, videoId: vid(5), channelId: CH_B, trueChannel: CH_Y, views: 8888 }, // DROP: video is on another channel
   ];
   if (mode === "empty") clips = [];
+  // realyt: one REAL clip from the command line; the workflow reads the real YouTube API (config.youtubeApiBase), not this mock
+  if (mode === "realyt") clips = [{ campaignId: flag("real-campaign", "7"), creator: flag("real-wallet", "").toLowerCase(), videoId: flag("real-video", ""), channelId: flag("real-channel", ""), trueChannel: flag("real-channel", ""), views: 0 }];
   if (mode === "bump") clips = clips.map((c, i) => (i === 0 ? { ...c, views: c.views + 100 } : c));
   if (mode === "unlinked") clips = [...clips, { campaignId: "7", creator: C, videoId: vid(6), channelId: CH_C, trueChannel: CH_C, views: 777 }];
   if (mode === "large") {
