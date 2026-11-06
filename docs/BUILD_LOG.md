@@ -21,6 +21,7 @@ Branch: `feat/core-sponsor-integration`. Goal: win ETHGlobal Mumbai (deadline Sa
 | 2026-11-06 | Commit in small steps and push to the feature branch. Nothing goes to `main` until you say so. |
 | 2026-11-06 | Option 1 for payouts: Clippo's wallet triggers the payout and pays gas, but the contract can only send money to the creator who earned it. |
 | 2026-11-06 | Keep this build log up to date after every step (this file). |
+| 2026-11-06 | Chainlink CRE work happens on its own branch, `feat/cre-core`, starting with a plan before code. |
 
 ## Starting point (audit before our changes)
 
@@ -43,6 +44,14 @@ Track status at the start:
 | Arc | Partly | Real USDC escrow, but no Arc Studio project URL (every Arc prize requires one). |
 
 ## Log
+
+### 7. CRE branch and plan, commit pending
+
+- **What:** created branch `feat/cre-core` (from `feat/core-sponsor-integration` at `8c28d88`, in its own git worktree at `.worktrees/cre` so the other checkout is not switched). Read how CRE is wired and wrote `docs/CRE_PLAN.md`: how it works today, six gaps, a target design where CRE nodes read YouTube views themselves, milestones M0 to M6 with a cut line, and what we need from the owner.
+- **Why:** the earlier review scored CRE 2 of 5 because the workflow only reads Clippo's own server, so a cron job with one key would do the same, and nothing in the app shows CRE.
+- **Files:** `docs/CRE_PLAN.md` (new), this log. No code changed.
+- **Checked:** on the new branch `npm run typecheck` is clean and the 9 CRE unit tests pass (cre/ `npm ci` first). CRE CLI v1.39.0 is installed and logged in; `cre whoami` says Deploy Access: Not enabled. CRE limits read from docs.chain.link/cre/service-quotas.
+- **Not proven:** the target design has not been built or run. The Early Access request, a YouTube key for the nodes, and the escrow deploy are still open.
 
 ### 6. Docs corrected and a focus guide added, commit `7a93a2c`
 
@@ -119,6 +128,7 @@ Track status at the start:
 
 ## Waiting on you
 
+0. CRE: run `cre account access` and report the result; put a YouTube Data API key only in `cre/.env` and Vercel; confirm that existing channels must re-verify with a wallet-bound code.
 1. **Clippo backend wallet:** create a new wallet, fund it with testnet USDC, and send me only its address. The address is fixed at deploy. The private key goes in Vercel as `HUMAN_ATTESTOR_PRIVATE_KEY`.
 2. **Arc Studio:** `npm i -g @circle-fin/arc-studio-cli`, then `arc-studio login`.
 3. **World portal (`auth.world.org/portal`):** create a client. Callback URL `https://clippo-six.vercel.app/api/agentpass/stepup/callback`, client auth `client_secret_basic`, and the same environment (production or sandbox) for portal, credentials and issuer.
@@ -126,6 +136,10 @@ Track status at the start:
 5. **Ask World staff:** which issuer and credential level do the prize's mocked proofs use?
 
 ## Coming next
+
+CRE (branch `feat/cre-core`, see `docs/CRE_PLAN.md`): M1 manifest route and wallet-bound channel code, M2 workflow reads YouTube, M3 local end-to-end, then M4 to M6.
+
+Project-wide:
 
 1. Deploy the new contracts on Arc (you sign), then set the real receiver in `cre/.../config.production.json`, the new addresses in Vercel, and `ESCROW_DEPLOY_BLOCK`.
 2. Build and show the work in Arc Studio, and get the shareable project URL.
