@@ -45,7 +45,18 @@ Track status at the start:
 
 ## Log
 
-### 20. Deployed to Vercel (new project) and the site shows the real CRE result, commit pending
+### 21. Merged main into this branch (teammate's World ID step-up), commit pending
+
+- **What:** `main` received a teammate's World ID step-up (`worldauth`, branch `feat/world-idkit-stepup-and-deploy-fixes`) after this work began, and it overlapped with ours. Trial merge: 36 files, about 100 conflict hunks. Decision (owner): keep main's step-up, drop ours.
+  - Reverted our step-up commit `19205ba` in a normal revert commit `b157008` (history kept), then merged `origin/main`.
+  - Adapted main's approve and split routes so that, after main's human gate passes, the backend signs the proof the enforcing escrow requires (`approveCampaign(id, proof)` / `approveSplit(..., proof)`); main's approve screen now sends that proof to the contract. Recipients of a split must have passed World ID at the real approval.
+  - CRE: kept our v2 workflow (nodes read YouTube), took main's locked-down HTTP trigger (`config.ts`: `httpAuthorizedKeys`, `requireHttpAuthorizedKeys`); the production config now lists the simulation wallet `0x7149...01F6` as the authorized trigger key (was a TODO placeholder). The zero-receiver check stays at delivery time.
+  - Kept the unused `worldIdpIdentity` column and migration `20261106000000_world_idp_identity` because the clippo-cre database already has it applied.
+  - Docs: World docs taken from main; the other docs merged by hand, keeping our verified CRE, escrow and deploy facts.
+- **Tested on the merged tree:** web typecheck clean and 325 tests passed (1 skipped); CRE typecheck clean, 26 tests passed, WASM compile ok; `forge test` 114 passed. Docs written before the merge still quote the old counts (311 web, 22 CRE).
+- **Not proven:** the merged step-up has not run against the real auth.world.org issuer or in a browser; the new escrow's signed proof through main's step-up gate is covered by typecheck and the existing tests only, not by a live approval. The deployed site `clippo-cre.vercel.app` still runs the feature branch from before this merge. Main's docs say the older escrow was deployed from Arc Studio; we have not verified that. `docs/tracks/arc-studio-prompt.md` still says no Studio project exists.
+
+### 20. Deployed to Vercel (new project) and the site shows the real CRE result, commit `0e9f7f8`
 
 - **What:** the owner gave access to run the Vercel steps. The old `clippo-six` project is not in the owner's account, so a new project `clippo-cre` was created in `aniruddha1295s-projects`: https://clippo-cre.vercel.app. Neon database `clippo-cre-db` provisioned through the Vercel integration (owner accepted the terms), all migrations applied, 7 production variables set, production deploy ready (a local build passed first), seed script run (`--confirm`), then `/api/snapshots/refresh` and `/api/chain/sync`. `config.production.json` now points `backendUrl` at the new site.
 - **Result (checked from the public site):** `/api/chain/config` shows the new escrow `0x1e05...26Ef` and `explorerBase`; `/api/health`: db, chain, YouTube key, attestor wallet detected, dev bypass off, dangerous keys absent. Refresh updated 1 clip from the real YouTube API; sync indexed 12 events and applied 2. `GET /api/campaigns/<seed id>`: `confirmedViews 3`, `pendingViews 0`, proof = the real CRE transaction `0xa41f91da...c8409`. A browser check of the campaign page shows "Confirmed views, all creators: 3", the Chainlink badge, the proof link and the TESTNET banner.

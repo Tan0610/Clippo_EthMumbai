@@ -7,6 +7,33 @@ import { actions, errText, extActions, type ChannelRec, type LinkPlatform, type 
 import { PageHead } from "./Bits";
 import { Arrow, Check, VerifiedMark } from "./Icons";
 import { WorldCheck, worldFailText, type WorldResult } from "./WorldCheck";
+import { CREDENTIAL_HELP_URL } from "../lib/worldid/errors";
+
+/** Short, honest credential rationale shown next to the verify button. */
+export function WhyProofOfHuman() {
+  return (
+    <details className="hint">
+      <summary>Why Proof of Human?</summary>
+      <p className="muted">
+        Creator accounts can be paid USDC, so the risk is one person opening many accounts to collect many payouts. Proof of Human is the lightest World ID credential that gives one nullifier per person for this action, so a second account from the same person is refused. A Selfie Check would show a live person but not one-person-one-account. A Passport check proves a document fact, not uniqueness across people. This limits duplicate accounts; it does not prove anyone is honest. Approving a release is checked separately.
+      </p>
+    </details>
+  );
+}
+
+/** The visible alternative path when World ID has no Proof of Human credential for this person. */
+export function CredentialUnavailable() {
+  return (
+    <div className="notice warn" role="alert">
+      <b>No Proof of Human credential.</b>
+      Your World ID has no Proof of Human credential. You can browse as a viewer but cannot join campaigns as a creator.{" "}
+      <a href={CREDENTIAL_HELP_URL} target="_blank" rel="noreferrer">Get a credential</a>
+      <div className="row" style={{ marginTop: 10 }}>
+        <Link href="/wire" className="btn ghost sm">Continue without verifying (viewer only)</Link>
+      </div>
+    </div>
+  );
+}
 
 type Ch = { id: string; handle: string; verificationCode: string };
 
@@ -200,10 +227,13 @@ export function JoinView() {
   const [role, setRole] = useState<"creator" | "campaigner" | null>(null);
   const [world, setWorld] = useState(false);
   const [fail, setFail] = useState("");
+  const [noCred, setNoCred] = useState(false);
   const [channel, setChannel] = useState(false);
 
   async function result(r: WorldResult, proof?: WorldProof, message?: string) {
     setWorld(false);
+    setNoCred(r === "unavailable");
+    if (r === "unavailable") return setFail("");
     if (r !== "verified" || !proof) return setFail(worldFailText(null, r, message));
     try {
       await s.verifyWorld(proof);
@@ -252,7 +282,9 @@ export function JoinView() {
             ) : (
               <>
                 <p className="muted">World ID checks you are a unique person without handing over who you are. Clippo only stores that you passed.</p>
-                <button className="btn" style={{ justifySelf: "start" }} onClick={() => setWorld(true)}>Verify with World ID</button>
+                <button className="btn" style={{ justifySelf: "start" }} onClick={() => setWorld(true)}>Verify with World ID (Proof of Human)</button>
+                <WhyProofOfHuman />
+                {noCred && <CredentialUnavailable />}
                 {fail && <p className="notice warn" role="alert"><b>Not verified.</b>{fail}</p>}
               </>
             )}
@@ -272,7 +304,7 @@ export function JoinView() {
           )}
         </ol>
       )}
-      {world && <WorldCheck kind="proof-of-human" purpose="Prove you are a unique human" onResult={result} />}
+      {world && <WorldCheck kind="proof-of-human" purpose="Prove you are a unique human (Proof of Human)" onResult={result} />}
     </div>
   );
 }

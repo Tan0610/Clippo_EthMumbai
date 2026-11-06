@@ -4,10 +4,11 @@
  * Every failure path must leave the action undone AND leave an audit record. AgentBook and World ID are injected doubles.
  */
 import { generatePrivateKey } from "viem/accounts";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { setOverride } from "@/lib/config";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { getOverride, setOverride } from "@/lib/config";
+import { attestationHash } from "@/lib/chain/split";
 import type { LlmClient } from "@/lib/ai/llm";
-import { clearDoubles, installChainDouble, installDoubles } from "@/test/doubles";
+import { clearDoubles, FAKE_WORLD_AUTH, installChainDouble, installDoubles, type FakeWorldAuth } from "@/test/doubles";
 import { resetDb } from "@/test/db";
 
 process.env.ADMIN_WALLETS = "0xad00000000000000000000000000000000000001";
@@ -16,6 +17,7 @@ process.env.AGENT_PASS_PRIVATE_KEY = generatePrivateKey();
 
 type Db = typeof import("@/lib/db").db;
 let db: Db;
+let fake: FakeWorldAuth;
 
 const ADMIN = "0xad00000000000000000000000000000000000001";
 const CAMPAIGNER = "0xca00000000000000000000000000000000000002";
@@ -62,22 +64,48 @@ async function propose(campaignId: string, body: Record<string, unknown> = { mod
   expect(p.status).toBe(201);
   return p.body.proposal as { id: string; splitHash: string; splits: { creatorWallet: string; amount: number }[]; agent: { address: string } };
 }
-const approveBody = (p: { id: string; splits: { creatorWallet: string; amount: number }[] }, worldIdProof: unknown) => ({
+type Prop = { id: string; splits: { creatorWallet: string; amount: number }[] };
+const approveBody = (p: Prop, worldIdProof: unknown) => ({
   splits: p.splits.map((s) => ({ creatorWallet: s.creatorWallet, amount: s.amount })),
   worldIdProof,
   agentProposalId: p.id,
+});
+const stepBody = (p: Prop, stepUpAttemptId: string) => ({ splits: p.splits.map((s) => ({ creatorWallet: s.creatorWallet, amount: s.amount })), stepUpAttemptId, agentProposalId: p.id });
+
+/** One World identity per approver (the same human may not approve for both roles). */
+const SUBS: Record<string, string> = { [CAMPAIGNER]: "world-sub-campaigner", [ADMIN]: "world-sub-admin" };
+
+/** Drives the real flow: start route -> (provider double) callback route. Returns the attempt id; the attempt ends AUTHORIZED or, with `error`, DENIED. */
+async function stepUp(campaignId: string, wallet: string, splits: { creatorWallet: string; amount: number }[], agentProposalId?: string, error?: string) {
+  const start = await import("@/app/api/campaigns/[id]/stepup/start/route");
+  const callback = await import("@/app/api/auth/world/callback/route");
+  fake.setSub(SUBS[wallet]!);
+  const r = await call(start.POST, jsonReq(`/api/campaigns/${campaignId}/stepup/start`, wallet, { operation: "SPLIT_RELEASE", splits, agentProposalId, returnPath: `/desk/c/${campaignId}` }), campaignId);
+  expect(r.status).toBe(201);
+  const attempt = await db.stepUpAttempt.findUniqueOrThrow({ where: { id: r.body.attemptId } });
+  const q = new URLSearchParams({ state: attempt.state, ...(error ? { error } : { code: "auth-code", iss: FAKE_WORLD_AUTH.issuer }) });
+  await callback.GET(jsonReq(`/api/auth/world/callback?${q}`, wallet, undefined, "GET"));
+  return attempt.id;
+}
+const approveVia = async (c: { id: string }, wallet: string, p: Prop) => stepUp(c.id, wallet, p.splits, p.id);
+const counts = async (campaignId: string) => ({
+  split: await db.splitProposal.count({ where: { campaignId } }),
+  att: await db.humanAttestation.count({ where: { campaignId } }),
+  used: await db.usedProof.count(),
+  payout: await db.payout.count({ where: { campaignId } }),
 });
 const audits = (campaignId: string) => db.agentAudit.findMany({ where: { campaignId }, orderBy: { createdAt: "asc" } });
 
 beforeAll(async () => {
   installDoubles();
+  fake = getOverride<FakeWorldAuth>("worldAuth")!;
   installChainDouble({ getCampaign: async () => ({ state: 2, campaignerFeeBps: 25, creatorFeeBps: 25, highValue: false }) as never });
   setOverride("agentBook", { lookupHuman: async () => (registered ? "0xhuman-anon-id-0001" : null) });
   db = (await import("@/lib/db")).db;
   await resetDb(db);
   await Promise.all([
-    db.user.create({ data: { wallet: ADMIN, role: "ADMIN" } }),
-    db.user.create({ data: { wallet: CAMPAIGNER, role: "CAMPAIGNER" } }),
+    db.user.create({ data: { wallet: ADMIN, role: "ADMIN", verified: true } }),
+    db.user.create({ data: { wallet: CAMPAIGNER, role: "CAMPAIGNER", verified: true } }),
     db.user.create({ data: { wallet: OTHER, role: "CAMPAIGNER" } }),
   ]);
   const creator = await db.user.create({ data: { wallet: CREATOR, role: "CREATOR", verified: true, worldIdNullifier: "0xc0ffee" } });
@@ -85,6 +113,7 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
+  delete process.env.WORLD_AUTH_POLICY;
   clearDoubles();
   setOverride("agentBook", null);
   await db?.$disconnect();
@@ -148,6 +177,7 @@ describe("agent proposal", () => {
 describe("human approval of the agent's proposal: failure paths leave it undone and are logged", () => {
   it("cancelled, expired and replayed proofs; wrong approver; changed split; expired proposal; then success; then already released", async () => {
     const { POST } = await import("@/app/api/campaigns/[id]/split/route");
+    process.env.WORLD_AUTH_POLICY = "either"; // the IDKit failure paths of an agent proposal are only reachable under the "either" policy
     const c = await setup({ approver: "CAMPAIGNER_ONLY" });
     const p = await propose(c.id);
     const url = `/api/campaigns/${c.id}/split`;
@@ -198,8 +228,9 @@ describe("human approval of the agent's proposal: failure paths leave it undone 
 
     // fresh proposal, human approves with a fresh proof: only now does anything move
     const p2 = await propose(c.id);
-    const good = await call(POST, jsonReq(url, CAMPAIGNER, approveBody(p2, proof())), c.id);
+    const good = await call(POST, jsonReq(url, CAMPAIGNER, stepBody(p2, await approveVia(c, CAMPAIGNER, p2))), c.id);
     expect(good.status).toBe(201);
+    expect(good.body.gate).toBe("stepup");
     expect(good.body.proposal.status).toBe("AWAITING_CHAIN");
     expect(good.body.payouts).toEqual([]);
     expect(good.body.onchain.functionName).toBe("approveSplit");
@@ -209,6 +240,7 @@ describe("human approval of the agent's proposal: failure paths leave it undone 
     const again = await call(POST, jsonReq(url, CAMPAIGNER, approveBody(p2, proof())), c.id);
     expect(again.status).toBe(409);
     expect(again.body.error.code).toBe("ALREADY_RELEASED");
+    delete process.env.WORLD_AUTH_POLICY;
 
     // every step is in the audit log, in the right shape
     const log = await audits(c.id);
@@ -220,21 +252,24 @@ describe("human approval of the agent's proposal: failure paths leave it undone 
     expect(log.find((a) => a.outcome === "REPLAYED")).toMatchObject({ proofStatus: "REPLAYED" });
   });
 
-  it("two-party: the admin must give their own fresh proof on the identical agent proposal", async () => {
+  it("two-party: the admin must give their own step-up on the identical agent proposal", async () => {
     const { POST } = await import("@/app/api/campaigns/[id]/split/route");
     const c = await setup();
     const p = await propose(c.id);
     const url = `/api/campaigns/${c.id}/split`;
-    const first = proof();
-    const a = await call(POST, jsonReq(url, CAMPAIGNER, approveBody(p, first)), c.id);
+    const first = await approveVia(c, CAMPAIGNER, p);
+    const a = await call(POST, jsonReq(url, CAMPAIGNER, stepBody(p, first)), c.id);
+    expect(a.status).toBe(201);
     expect(a.body.proposal).toMatchObject({ status: "PENDING", awaiting: ["admin"] });
     expect((await db.agentProposal.findUniqueOrThrow({ where: { id: p.id } })).status).toBe("PROPOSED");
-    // the campaigner's proof cannot be reused by the admin
-    const replay = await call(POST, jsonReq(url, ADMIN, approveBody(p, first)), c.id);
-    expect(replay.body.error.code).toBe("PROOF_REUSED");
-    const b = await call(POST, jsonReq(url, ADMIN, approveBody(p, proof())), c.id);
+    // the campaigner's step-up cannot be used by the admin
+    const replay = await call(POST, jsonReq(url, ADMIN, stepBody(p, first)), c.id);
+    expect(replay.body.error.code).toBe("STEPUP_NOT_FOUND");
+    const b = await call(POST, jsonReq(url, ADMIN, stepBody(p, await approveVia(c, ADMIN, p))), c.id);
+    expect(b.status).toBe(201);
     expect(b.body.proposal.status).toBe("AWAITING_CHAIN");
     expect((await db.agentProposal.findUniqueOrThrow({ where: { id: p.id } })).status).toBe("APPROVED");
+    expect(await db.humanAttestation.count({ where: { campaignId: c.id } })).toBe(2);
   });
 
   it("a revoked agent's proposal can no longer be approved", async () => {
@@ -242,10 +277,190 @@ describe("human approval of the agent's proposal: failure paths leave it undone 
     const { POST } = await import("@/app/api/campaigns/[id]/split/route");
     const c = await setup();
     const p = await propose(c.id);
+    const attemptId = await approveVia(c, CAMPAIGNER, p);
     expect((await call(agentRoute.DELETE, jsonReq(`/api/campaigns/${c.id}/agent`, CAMPAIGNER, undefined, "DELETE"), c.id)).status).toBe(200);
-    const r = await call(POST, jsonReq(`/api/campaigns/${c.id}/split`, CAMPAIGNER, approveBody(p, proof())), c.id);
+    const r = await call(POST, jsonReq(`/api/campaigns/${c.id}/split`, CAMPAIGNER, stepBody(p, attemptId)), c.id);
     expect(r.body.error.code).toBe("AGENT_REVOKED");
+    expect((await db.stepUpAttempt.findUniqueOrThrow({ where: { id: attemptId } })).status).toBe("AUTHORIZED");
     expect(await db.splitProposal.count({ where: { campaignId: c.id } })).toBe(0);
+  });
+});
+
+describe("World ID step-up gate (auth.world.org) for releasing an agent's split", () => {
+  const url = (id: string) => `/api/campaigns/${id}/split`;
+  const humanSplit = [{ creatorWallet: CREATOR, amount: 500 }];
+  afterEach(() => {
+    delete process.env.WORLD_AUTH_POLICY;
+  });
+
+  it("an IDKit proof alone is refused for an agent proposal (428 STEPUP_REQUIRED) and NOTHING is written", async () => {
+    const { POST } = await import("@/app/api/campaigns/[id]/split/route");
+    const c = await setup({ approver: "CAMPAIGNER_ONLY" });
+    const p = await propose(c.id);
+    const before = await counts(c.id);
+    const r = await call(POST, jsonReq(url(c.id), CAMPAIGNER, approveBody(p, proof())), c.id);
+    expect(r.status).toBe(428);
+    expect(r.body.error.code).toBe("STEPUP_REQUIRED");
+    expect(await counts(c.id)).toEqual(before);
+    expect((await db.agentProposal.findUniqueOrThrow({ where: { id: p.id } })).status).toBe("PROPOSED");
+  });
+
+  it("requires exactly one of worldIdProof / stepUpAttemptId", async () => {
+    const { POST } = await import("@/app/api/campaigns/[id]/split/route");
+    const c = await setup({ approver: "CAMPAIGNER_ONLY" });
+    const none = await call(POST, jsonReq(url(c.id), CAMPAIGNER, { splits: humanSplit }), c.id);
+    expect(none.status).toBe(400);
+    expect(none.body.error.code).toBe("PROOF_REQUIRED");
+    const both = await call(POST, jsonReq(url(c.id), CAMPAIGNER, { splits: humanSplit, worldIdProof: proof(), stepUpAttemptId: "x" }), c.id);
+    expect(both.body.error.code).toBe("PROOF_REQUIRED");
+  });
+
+  it("human-built splits keep working with an IDKit proof (gate idkit); policy 'required' demands a step-up for them too", async () => {
+    const { POST } = await import("@/app/api/campaigns/[id]/split/route");
+    const c = await setup({ approver: "CAMPAIGNER_ONLY" });
+    process.env.WORLD_AUTH_POLICY = "required";
+    const refused = await call(POST, jsonReq(url(c.id), CAMPAIGNER, { splits: humanSplit, worldIdProof: proof() }), c.id);
+    expect(refused.body.error.code).toBe("STEPUP_REQUIRED");
+    delete process.env.WORLD_AUTH_POLICY;
+    const ok = await call(POST, jsonReq(url(c.id), CAMPAIGNER, { splits: humanSplit, worldIdProof: proof() }), c.id);
+    expect(ok.status).toBe(201);
+    expect(ok.body.gate).toBe("idkit");
+    expect(ok.body.proposal.status).toBe("AWAITING_CHAIN");
+  });
+
+  it("policy 'either' allows an IDKit proof for an agent proposal", async () => {
+    const { POST } = await import("@/app/api/campaigns/[id]/split/route");
+    const c = await setup({ approver: "CAMPAIGNER_ONLY" });
+    const p = await propose(c.id);
+    process.env.WORLD_AUTH_POLICY = "either";
+    const r = await call(POST, jsonReq(url(c.id), CAMPAIGNER, approveBody(p, proof())), c.id);
+    expect(r.status).toBe(201);
+    expect(r.body.gate).toBe("idkit");
+    expect((await db.agentProposal.findUniqueOrThrow({ where: { id: p.id } })).status).toBe("APPROVED");
+  });
+
+  it("single-party step-up approval reaches AWAITING_CHAIN; the attestation keeps its format and the attempt is spent", async () => {
+    const { POST } = await import("@/app/api/campaigns/[id]/split/route");
+    const c = await setup({ approver: "CAMPAIGNER_ONLY" });
+    const p = await propose(c.id);
+    const attemptId = await approveVia(c, CAMPAIGNER, p);
+    const r = await call(POST, jsonReq(url(c.id), CAMPAIGNER, stepBody(p, attemptId)), c.id);
+    expect(r.status).toBe(201);
+    expect(r.body.gate).toBe("stepup");
+    expect(r.body.proposal).toMatchObject({ status: "AWAITING_CHAIN", twoParty: false, awaiting: ["chain"] });
+    expect(r.body.attestation).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(r.body.onchain.functionName).toBe("approveSplit");
+    const a = await db.stepUpAttempt.findUniqueOrThrow({ where: { id: attemptId } });
+    expect(a.status).toBe("CONSUMED");
+    const user = await db.user.findUniqueOrThrow({ where: { wallet: CAMPAIGNER } });
+    const att = await db.humanAttestation.findFirstOrThrow({ where: { campaignId: c.id } });
+    expect(att.attestation).toBe(r.body.attestation);
+    expect(r.body.attestation).toBe(attestationHash({ kind: "SPLIT", campaignKey: "1", wallet: user.wallet, nullifier: `oidc:${a.iss}:${a.sub}`, proofHash: att.proofHash, splitHash: p.splitHash }));
+    expect(await db.usedProof.count({ where: { proofHash: att.proofHash, action: "stepup:split" } })).toBe(1);
+    expect((await db.agentProposal.findUniqueOrThrow({ where: { id: p.id } })).status).toBe("APPROVED");
+    const log = await audits(c.id);
+    expect(log.find((x) => x.event === "APPROVED")?.detail).toContain("step-up via auth.world.org (acr orb, fresh)");
+    // single use
+    const again = await call(POST, jsonReq(url(c.id), CAMPAIGNER, stepBody(p, attemptId)), c.id);
+    expect(again.status).toBe(409);
+  });
+
+  it("concurrent double POST with one attempt: exactly one succeeds", async () => {
+    const { POST } = await import("@/app/api/campaigns/[id]/split/route");
+    const c = await setup({ approver: "CAMPAIGNER_ONLY" });
+    const p = await propose(c.id);
+    const attemptId = await approveVia(c, CAMPAIGNER, p);
+    const rs = await Promise.all([0, 1].map(() => call(POST, jsonReq(url(c.id), CAMPAIGNER, stepBody(p, attemptId)), c.id)));
+    expect(rs.filter((r) => r.status === 201)).toHaveLength(1);
+    expect(rs.filter((r) => r.status === 409)).toHaveLength(1);
+    expect(await db.humanAttestation.count({ where: { campaignId: c.id } })).toBe(1);
+    expect(await db.splitProposal.count({ where: { campaignId: c.id } })).toBe(1);
+  });
+
+  it("a split changed after the step-up is refused: STEPUP_BINDING_MISMATCH (agent proposal: SPLIT_CHANGED), nothing written, attempt unspent", async () => {
+    const { POST } = await import("@/app/api/campaigns/[id]/split/route");
+    const c = await setup({ approver: "CAMPAIGNER_ONLY" });
+    const attemptId = await stepUp(c.id, CAMPAIGNER, humanSplit); // human-built split, step-up for 500
+    process.env.WORLD_AUTH_POLICY = "either";
+    const before = await counts(c.id);
+    const r = await call(POST, jsonReq(url(c.id), CAMPAIGNER, { splits: [{ creatorWallet: CREATOR, amount: 499 }], stepUpAttemptId: attemptId }), c.id);
+    expect(r.status).toBe(409);
+    expect(r.body.error.code).toBe("STEPUP_BINDING_MISMATCH");
+    expect(await counts(c.id)).toEqual(before);
+    expect((await db.stepUpAttempt.findUniqueOrThrow({ where: { id: attemptId } })).status).toBe("AUTHORIZED");
+    delete process.env.WORLD_AUTH_POLICY;
+    // agent proposal whose split was edited: caught even earlier by the proposal hash
+    const c2 = await setup({ approver: "CAMPAIGNER_ONLY" });
+    const p = await propose(c2.id);
+    const ch = await call(POST, jsonReq(url(c2.id), CAMPAIGNER, { splits: [{ creatorWallet: CREATOR, amount: 499 }], stepUpAttemptId: attemptId, agentProposalId: p.id }), c2.id);
+    expect(ch.body.error.code).toBe("SPLIT_CHANGED");
+  });
+
+  it("an expired authorization (authorizedUntil passed) or an incomplete attempt cannot release", async () => {
+    const { POST } = await import("@/app/api/campaigns/[id]/split/route");
+    const c = await setup({ approver: "CAMPAIGNER_ONLY" });
+    const p = await propose(c.id);
+    const before = await counts(c.id);
+    const attemptId = await approveVia(c, CAMPAIGNER, p);
+    await db.stepUpAttempt.update({ where: { id: attemptId }, data: { authorizedUntil: new Date(Date.now() - 1000) } });
+    const r = await call(POST, jsonReq(url(c.id), CAMPAIGNER, stepBody(p, attemptId)), c.id);
+    expect(r.status).toBe(410);
+    expect(r.body.error.code).toBe("STEPUP_EXPIRED");
+    // started but never completed at the provider
+    const start = await import("@/app/api/campaigns/[id]/stepup/start/route");
+    const s = await call(start.POST, jsonReq(`/api/campaigns/${c.id}/stepup/start`, CAMPAIGNER, { operation: "SPLIT_RELEASE", splits: p.splits, agentProposalId: p.id }), c.id);
+    const pending = await call(POST, jsonReq(url(c.id), CAMPAIGNER, stepBody(p, s.body.attemptId)), c.id);
+    expect(pending.status).toBe(428);
+    expect(pending.body.error.code).toBe("STEPUP_REQUIRED");
+    expect(await counts(c.id)).toEqual(before);
+  });
+
+  it("a cancelled (denied) step-up cannot be used", async () => {
+    const { POST } = await import("@/app/api/campaigns/[id]/split/route");
+    const c = await setup({ approver: "CAMPAIGNER_ONLY" });
+    const p = await propose(c.id);
+    const before = await counts(c.id);
+    const attemptId = await stepUp(c.id, CAMPAIGNER, p.splits, p.id, "access_denied");
+    expect((await db.stepUpAttempt.findUniqueOrThrow({ where: { id: attemptId } })).status).toBe("DENIED");
+    const r = await call(POST, jsonReq(url(c.id), CAMPAIGNER, stepBody(p, attemptId)), c.id);
+    expect(r.status).toBe(428);
+    expect(r.body.error.code).toBe("STEPUP_REQUIRED");
+    expect(await counts(c.id)).toEqual(before);
+    expect((await db.agentProposal.findUniqueOrThrow({ where: { id: p.id } })).status).toBe("PROPOSED");
+  });
+});
+
+describe("high-value campaign approval (attest) accepts a CAMPAIGN_APPROVE step-up or an IDKit proof", () => {
+  async function startApprove(campaignId: string, wallet: string) {
+    const start = await import("@/app/api/campaigns/[id]/stepup/start/route");
+    const callback = await import("@/app/api/auth/world/callback/route");
+    fake.setSub(SUBS[wallet]!);
+    const r = await call(start.POST, jsonReq(`/api/campaigns/${campaignId}/stepup/start`, wallet, { operation: "CAMPAIGN_APPROVE" }), campaignId);
+    expect(r.status).toBe(201);
+    const a = await db.stepUpAttempt.findUniqueOrThrow({ where: { id: r.body.attemptId } });
+    await callback.GET(jsonReq(`/api/auth/world/callback?${new URLSearchParams({ state: a.state, code: "c", iss: FAKE_WORLD_AUTH.issuer })}`, wallet, undefined, "GET"));
+    return a.id;
+  }
+
+  it("step-up path succeeds once; the IDKit path still works; exactly one source is required; non-admins are refused", async () => {
+    const { POST } = await import("@/app/api/campaigns/[id]/attest/route");
+    const c = await setup({ status: "FUNDED", highValue: true });
+    const url = `/api/campaigns/${c.id}/attest`;
+    expect((await call(POST, jsonReq(url, ADMIN, {}), c.id)).body.error.code).toBe("PROOF_REQUIRED");
+    const attemptId = await startApprove(c.id, ADMIN);
+    const r = await call(POST, jsonReq(url, ADMIN, { stepUpAttemptId: attemptId }), c.id);
+    expect(r.status).toBe(201);
+    expect(r.body.gate).toBe("stepup");
+    expect(r.body.attestation).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(r.body.onchain.functionName).toBe("approveCampaign");
+    expect((await call(POST, jsonReq(url, ADMIN, { stepUpAttemptId: attemptId }), c.id)).status).toBe(409);
+    expect(await db.humanAttestation.count({ where: { campaignId: c.id, kind: "APPROVE" } })).toBe(1);
+    // a split-release attempt is bound to a different hash and cannot approve a campaign
+    const c2 = await setup({ status: "FUNDED" });
+    const idk = await call(POST, jsonReq(`/api/campaigns/${c2.id}/attest`, ADMIN, { worldIdProof: proof() }), c2.id);
+    expect(idk.status).toBe(201);
+    expect(idk.body.gate).toBe("idkit");
+    expect((await call(POST, jsonReq(url, CAMPAIGNER, { stepUpAttemptId: attemptId }), c.id)).status).toBe(403);
   });
 });
 

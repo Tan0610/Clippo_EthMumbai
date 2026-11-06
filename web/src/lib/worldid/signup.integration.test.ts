@@ -2,6 +2,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { clearDoubles, installDoubles } from "@/test/doubles";
 import { resetDb } from "@/test/db";
+import { ACCEPTED_IDENTIFIERS, unknownIdentifiers, toVerifyBody } from "./index";
 import { toOnchainArgs, onchainAction, rpIdToBigInt } from "./onchain";
 
 type Db = typeof import("@/lib/db").db;
@@ -92,5 +93,20 @@ describe("on-chain argument mapping (World ID 4.0 verifier)", () => {
     expect(a[8]).toEqual([1n, 2n, 3n, 4n, 5n]);
     expect(rpIdToBigInt("rp_00ff")).toBe(255n);
     expect(() => toOnchainArgs({ protocol_version: "3.0", nonce: "n", responses: [{ identifier: "orb", nullifier: "0x1", proof: "p" }] }, "rp_00ff", "act")).toThrow(/uniqueness/);
+  });
+});
+
+describe("proofOfHuman-shaped IDKit result", () => {
+  // Shape of a 4.x result. The identifier is an ASSUMPTION ("proof_of_human"): confirm on the first live run.
+  const pohResult = { protocol_version: "4.0", nonce: "0x05", action: "clippo-creator-signup", environment: "production", responses: [{ identifier: "proof_of_human", nullifier: "0x01", signal_hash: "0x02", proof: ["0x1", "0x2", "0x3", "0x4", "0x5"] }] };
+  it("is forwarded whole to verify and its identifier is recognised", () => {
+    expect(ACCEPTED_IDENTIFIERS).toContain("proof_of_human");
+    expect(unknownIdentifiers(pohResult)).toEqual([]);
+    expect(toVerifyBody(pohResult, "clippo-creator-signup")).toMatchObject({ protocol_version: "4.0", responses: [{ identifier: "proof_of_human" }] });
+  });
+  it("unknown identifiers are reported but not rejected (non-fatal until verified live)", () => {
+    const odd = { ...pohResult, responses: [{ ...pohResult.responses[0], identifier: "brand_new" }] };
+    expect(unknownIdentifiers(odd)).toEqual(["brand_new"]);
+    expect(toVerifyBody(odd, "clippo-creator-signup").responses[0].identifier).toBe("brand_new");
   });
 });
