@@ -1,6 +1,6 @@
 # REAL Arc testnet (chain 5042002): CRE workflow simulation with --broadcast, reading the REAL YouTube API.
 # Captured 2026-11-07 with cre/scripts/simulate-arc-real.sh. Channel @visualsbyanii, video vWk4YV_dbsE, creator wallet 0x8CF9113b19Aa9D169365CA7B1BB9d7b957B460e5, campaign 1.
-# The manifest came from a local mock backend (one real clip); the deployed site has no manifest route yet.
+# The manifest came from a local mock backend (one real clip); the deployed site's manifest route only lists a clip after its approval day has ended (UTC), so it was empty.
 # This is a SIMULATION: one CRE node, report sent by our own simulation wallet through Arc's Chainlink TEST forwarder. It does not show Chainlink nodes signing.
 # Transaction: https://explorer.testnet.arc.io/tx/0xa41f91daf5431332ecaf1fbdfbf7f8ca13a38d39de8c41d0c1291f229f5c8409
 

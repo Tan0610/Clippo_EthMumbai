@@ -1,150 +1,305 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="720" viewBox="0 0 1120 720" font-family="'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
-  <defs>
-    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M0 0 L10 5 L0 10 z" fill="#475569"/>
-    </marker>
-    <marker id="arrowBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M0 0 L10 5 L0 10 z" fill="#2563eb"/>
-    </marker>
-    <marker id="arrowGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M0 0 L10 5 L0 10 z" fill="#059669"/>
-    </marker>
-    <style>
-      .title   { font-size: 24px; font-weight: 700; fill: #0f172a; }
-      .sub     { font-size: 13px; fill: #64748b; }
-      .zone    { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-      .box     { font-size: 14px; font-weight: 600; fill: #0f172a; }
-      .boxsub  { font-size: 11.5px; fill: #475569; }
-      .edge    { font-size: 11.5px; fill: #475569; }
-      .edgeb   { font-size: 11.5px; fill: #1d4ed8; font-weight: 600; }
-      .pill    { font-size: 11px; font-weight: 700; fill: #fff; }
-    </style>
-  </defs>
-
-  <rect width="1120" height="720" fill="#f8fafc"/>
-
-  <!-- Header -->
-  <text x="40" y="46" class="title">Clippo — Advanced Stablecoin Escrow on Arc</text>
-  <text x="40" y="68" class="sub">Clipping-campaign marketplace · USDC escrow with conditional release, retention window &amp; revenue splits · Foundry-tested · Arc Studio project not created yet</text>
-
-  <!-- Arc Studio origin banner -->
-  <rect x="40" y="88" width="1040" height="40" rx="8" fill="#eef2ff" stroke="#c7d2fe"/>
-  <circle cx="64" cy="108" r="6" fill="#4f46e5"/>
-  <text x="80" y="112" class="box" fill="#3730a3">Arc Studio</text>
-  <text x="168" y="112" class="boxsub">Project not created yet (every Arc prize requires one). ClippoEscrow.sol below was written and tested in Foundry.</text>
-
-  <!-- ===================== ZONE: USERS ===================== -->
-  <text x="40" y="168" class="zone" fill="#64748b">Users</text>
-  <rect x="40" y="180" width="200" height="300" rx="12" fill="#ffffff" stroke="#e2e8f0"/>
-  <g>
-    <rect x="64" y="208" width="152" height="60" rx="8" fill="#f1f5f9" stroke="#cbd5e1"/>
-    <text x="80" y="234" class="box">Campaigner</text>
-    <text x="80" y="252" class="boxsub">funds a campaign</text>
-
-    <rect x="64" y="288" width="152" height="60" rx="8" fill="#f1f5f9" stroke="#cbd5e1"/>
-    <text x="80" y="314" class="box">Creator</text>
-    <text x="80" y="332" class="boxsub">clips, earns, claims</text>
-
-    <rect x="64" y="368" width="152" height="60" rx="8" fill="#f1f5f9" stroke="#cbd5e1"/>
-    <text x="80" y="394" class="box">Admin</text>
-    <text x="80" y="412" class="boxsub">approves / rejects</text>
-  </g>
-
-  <!-- ===================== ZONE: WEB ===================== -->
-  <text x="300" y="168" class="zone" fill="#64748b">web/ — Next.js (frontend + backend)</text>
-  <rect x="300" y="180" width="430" height="440" rx="12" fill="#ffffff" stroke="#e2e8f0"/>
-
-  <!-- Frontend -->
-  <rect x="324" y="208" width="382" height="66" rx="8" fill="#eff6ff" stroke="#bfdbfe"/>
-  <text x="344" y="234" class="box">Frontend (React)</text>
-  <text x="344" y="254" class="boxsub">FundView · LedgerView · BenchView · AdminSplits</text>
-  <text x="344" y="270" class="boxsub">lib/chain/client.ts — viem wallet writes from the user’s wallet</text>
-
-  <!-- API -->
-  <rect x="324" y="290" width="382" height="86" rx="8" fill="#f0fdf4" stroke="#bbf7d0"/>
-  <text x="344" y="316" class="box">API routes (/api)</text>
-  <text x="344" y="336" class="boxsub">/campaigns/:id/{fund,approve,reject,close,split}</text>
-  <text x="344" y="352" class="boxsub">/payouts/:id/claim · /chain/config</text>
-  <text x="344" y="368" class="boxsub">verifies every tx receipt on-chain — never trusts the client</text>
-
-  <!-- DB -->
-  <rect x="324" y="392" width="184" height="82" rx="8" fill="#fff7ed" stroke="#fed7aa"/>
-  <text x="344" y="418" class="box">Prisma DB</text>
-  <text x="344" y="438" class="boxsub">Campaign · Payout</text>
-  <text x="344" y="454" class="boxsub">ViewSnapshot · Verdict</text>
-  <text x="344" y="470" class="boxsub" font-style="italic" fill="#9a3412">mirror of chain state</text>
-
-  <!-- supporting services -->
-  <rect x="522" y="392" width="184" height="82" rx="8" fill="#faf5ff" stroke="#e9d5ff"/>
-  <text x="542" y="418" class="box">Services</text>
-  <text x="542" y="438" class="boxsub">AI verifier (Claude/Gemini)</text>
-  <text x="542" y="454" class="boxsub">World ID · YouTube API</text>
-  <text x="542" y="470" class="boxsub" font-style="italic" fill="#6b21a8">anti-fraud gate</text>
-
-  <!-- ===================== ZONE: ARC ===================== -->
-  <text x="790" y="168" class="zone" fill="#64748b">Arc testnet</text>
-  <rect x="790" y="180" width="290" height="440" rx="12" fill="#ffffff" stroke="#e2e8f0"/>
-
-  <!-- Escrow (the star) -->
-  <rect x="812" y="208" width="246" height="230" rx="10" fill="#ecfdf5" stroke="#34d399" stroke-width="2"/>
-  <text x="832" y="234" class="box" fill="#065f46">ClippoEscrow.sol</text>
-  <text x="832" y="254" class="boxsub">USDC · SafeERC20 · ReentrancyGuard</text>
-
-  <rect x="832" y="268" width="206" height="26" rx="6" fill="#d1fae5"/>
-  <text x="844" y="285" class="boxsub" fill="#065f46">Lifecycle: Funded → Approved → Closed / Rejected</text>
-
-  <text x="832" y="316" class="boxsub" font-weight="700" fill="#065f46">Three conditional modes</text>
-  <text x="844" y="336" class="boxsub">• PerView — 7-day retention window</text>
-  <text x="844" y="354" class="boxsub">• HumanSplit — World-ID-gated splits</text>
-  <text x="844" y="372" class="boxsub">• PoolShare — pro-rata payout at close</text>
-  <text x="832" y="398" class="boxsub">Two-sided fees ≤ 50 bps · deadline refunds</text>
-  <text x="832" y="416" class="boxsub">custom errors · events · getCampaign/claimable</text>
-
-  <!-- USDC + Receiver -->
-  <rect x="812" y="452" width="118" height="150" rx="10" fill="#eff6ff" stroke="#93c5fd"/>
-  <text x="832" y="478" class="box" fill="#1e3a8a">USDC</text>
-  <text x="832" y="497" class="boxsub">0x3600…0000</text>
-  <text x="832" y="515" class="boxsub">6-dec ERC-20</text>
-  <text x="832" y="533" class="boxsub">gas token</text>
-  <text x="832" y="558" class="boxsub">faucet.circle</text>
-  <text x="832" y="574" class="boxsub">.com</text>
-
-  <rect x="940" y="452" width="118" height="150" rx="10" fill="#f8fafc" stroke="#cbd5e1"/>
-  <text x="960" y="478" class="box">ReportReceiver</text>
-  <text x="960" y="497" class="boxsub">signed view</text>
-  <text x="960" y="515" class="boxsub">reports →</text>
-  <text x="960" y="533" class="boxsub">reportViews()</text>
-  <text x="960" y="560" class="boxsub" font-style="italic">(Chainlink CRE</text>
-  <text x="960" y="576" class="boxsub" font-style="italic">settlement)</text>
-
-  <!-- ===================== EDGES ===================== -->
-  <!-- Users -> Frontend -->
-  <line x1="240" y1="238" x2="322" y2="238" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
-  <line x1="240" y1="318" x2="322" y2="248" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
-  <line x1="240" y1="398" x2="322" y2="258" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
-
-  <!-- Frontend -> API -->
-  <line x1="515" y1="274" x2="515" y2="288" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
-  <!-- API -> DB / Services -->
-  <line x1="430" y1="376" x2="416" y2="390" stroke="#475569" stroke-width="1.4" marker-end="url(#arrow)"/>
-  <line x1="600" y1="376" x2="612" y2="390" stroke="#475569" stroke-width="1.4" marker-end="url(#arrow)"/>
-
-  <!-- Frontend wallet -> Escrow (the money writes) -->
-  <path d="M706 240 C 760 240, 760 300, 810 300" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arrowBlue)"/>
-  <text x="712" y="224" class="edgeb">fund · claim · approve · close · split</text>
-
-  <!-- Escrow -> API (receipt verification) -->
-  <path d="M810 330 C 762 350, 760 334, 708 334" fill="none" stroke="#059669" stroke-width="1.8" stroke-dasharray="5 4" marker-end="url(#arrowGreen)"/>
-  <text x="724" y="364" class="edge" fill="#059669">tx receipt verified server-side</text>
-
-  <!-- Escrow <-> USDC -->
-  <line x1="871" y1="438" x2="871" y2="450" stroke="#1e3a8a" stroke-width="1.6" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
-  <!-- Receiver -> Escrow -->
-  <line x1="999" y1="452" x2="980" y2="440" stroke="#475569" stroke-width="1.4" marker-end="url(#arrow)"/>
-
-  <!-- Footer / money-flow legend -->
-  <rect x="40" y="648" width="1040" height="48" rx="8" fill="#ffffff" stroke="#e2e8f0"/>
-  <text x="56" y="669" class="boxsub" font-weight="700" fill="#0f172a">Money flow:</text>
-  <text x="140" y="669" class="boxsub">① approve USDC + createCampaign (pool escrowed, fee held) → ② admin approveCampaign (fee → treasury) → ③ PerView credits (CRE reports) mature →</text>
-  <text x="140" y="686" class="boxsub">④ claim()/claimFor() pays creator net of fee → ⑤ closeCampaign refunds unspent pool. DB mirrors chain. The enforcing design has not run on real Arc.</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1170" viewBox="0 0 1200 1170" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" role="img" aria-labelledby="ttl desc">
+<title id="ttl">Clippo architecture</title>
+<desc id="desc">Brand, creator and admin use a Next.js web app on Vercel with a Postgres database. The app calls an AI verifier, World ID and the YouTube Data API. USDC is escrowed on Arc testnet in ClippoEscrow. A Chainlink CRE workflow reads YouTube view counts and sends a signed report through a forwarder and ClippoReportReceiver to the escrow. The CRE workflow is simulated with the CLI and not deployed, and the receiver is in simulation mode.</desc>
+<defs>
+  <marker id="mGreen" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.2" markerHeight="5.2" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#047857"/></marker>
+  <marker id="mSlate" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#475569"/></marker>
+  <marker id="mSlateS" viewBox="0 0 10 10" refX="1.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M10 0 L0 5 L10 10 z" fill="#475569"/></marker>
+  <style>
+    .h1 { font-size: 28px; font-weight: 700; fill: #0f172a; }
+    .h2 { font-size: 13.5px; fill: #334155; }
+    .zone { font-size: 12px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+    .halo { paint-order: stroke; stroke: #ffffff; stroke-width: 3.5px; stroke-linejoin: round; }
+    .bt { font-size: 14px; font-weight: 700; fill: #0f172a; }
+    .bt2 { font-size: 13px; font-weight: 700; fill: #0f172a; }
+    .sub { font-size: 12px; fill: #334155; }
+    .sm { font-size: 11.5px; fill: #334155; }
+    .mono { font-family: ui-monospace, Menlo, Consolas, 'Courier New', monospace; font-size: 11px; fill: #334155; }
+    .lab { font-size: 11.5px; font-weight: 600; fill: #0f172a; }
+    .chip { font-size: 11px; font-weight: 700; }
+    .badge { font-size: 11.5px; font-weight: 700; fill: #ffffff; }
+  </style>
+</defs>
+<rect width="1200" height="1170" fill="#ffffff"/>
+<text x="24" y="42" class="h1">Clippo architecture</text>
+<text x="24" y="66" class="h2">Brands pay creators in USDC on Arc testnet for verified clip views. An agent proposes, never moves money alone.</text>
+<rect x="24" y="82" width="258" height="20" rx="10" fill="#fef3c7" stroke="#b45309" stroke-width="1"/>
+<text x="153" y="96" class="chip" text-anchor="middle" fill="#78350f">CRE: simulated with the CLI, not deployed</text>
+<rect x="290" y="82" width="168" height="20" rx="10" fill="#fef3c7" stroke="#b45309" stroke-width="1"/>
+<text x="374" y="96" class="chip" text-anchor="middle" fill="#78350f">Receiver: simulation mode</text>
+<rect x="466" y="82" width="316" height="20" rx="10" fill="#fef3c7" stroke="#b45309" stroke-width="1"/>
+<text x="624" y="96" class="chip" text-anchor="middle" fill="#78350f">World ID: not run against the real portal or issuer</text>
+<rect x="790" y="82" width="206" height="20" rx="10" fill="#e2e8f0" stroke="#64748b" stroke-width="1"/>
+<text x="893" y="96" class="chip" text-anchor="middle" fill="#1e293b">Deployed site: [SEED] demo rows</text>
+<rect x="24" y="120" width="568" height="410" rx="14" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.4"/>
+<text x="40" y="142" class="zone" fill="#334155">Users and web app</text>
+<rect x="40" y="164" width="112" height="62" rx="8" fill="#ffffff" stroke="#64748b" stroke-width="1.2"/>
+<text x="52" y="186" class="bt">Brand</text>
+<text x="52" y="203" class="sm">campaigner,</text>
+<text x="52" y="217" class="sm">funds the pool</text>
+<rect x="40" y="238" width="112" height="62" rx="8" fill="#ffffff" stroke="#64748b" stroke-width="1.2"/>
+<text x="52" y="260" class="bt">Creator</text>
+<text x="52" y="277" class="sm">posts clips,</text>
+<text x="52" y="291" class="sm">claims pay</text>
+<rect x="40" y="312" width="112" height="62" rx="8" fill="#ffffff" stroke="#64748b" stroke-width="1.2"/>
+<text x="52" y="334" class="bt">Admin</text>
+<text x="52" y="351" class="sm">approves,</text>
+<text x="52" y="365" class="sm">settles disputes</text>
+<text x="40" y="404" class="sm">Users sign wallet</text>
+<text x="40" y="418" class="sm">transactions with</text>
+<text x="40" y="432" class="sm">their own wallet.</text>
+<rect x="164" y="148" width="416" height="370" rx="12" fill="#ffffff" stroke="#64748b" stroke-width="1.4"/>
+<text x="178" y="168" class="bt">Web app: Next.js on Vercel</text>
+<text x="568" y="168" class="sm" text-anchor="end">clippo-cre.vercel.app</text>
+<rect x="178" y="180" width="388" height="60" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="1.2"/>
+<text x="190" y="200" class="bt">Frontend</text>
+<text x="190" y="217" class="sm">Pages and components, IDKit sheet.</text>
+<text x="190" y="232" class="sm">Shows Confirmed beside Pending views, with a proof link.</text>
+<rect x="178" y="268" width="178" height="238" rx="8" fill="#f0fdf4" stroke="#15803d" stroke-width="1.2"/>
+<text x="190" y="288" class="bt">API routes</text>
+<text x="190" y="304" class="mono">web/src/app/api</text>
+<text x="190" y="326" class="sm">campaigns, submissions</text>
+<text x="190" y="342" class="sm">worldid/verify</text>
+<text x="190" y="358" class="sm">stepup, auth/world</text>
+<text x="190" y="374" class="sm">payouts/:id/claim</text>
+<text x="190" y="390" class="sm">snapshots/clips</text>
+<text x="190" y="406" class="sm">chain/sync, chain/report</text>
+<text x="190" y="440" class="sm">Every transaction receipt</text>
+<text x="190" y="455" class="sm">is read from the chain</text>
+<text x="190" y="470" class="sm">before the DB is updated.</text>
+<rect x="380" y="268" width="186" height="80" rx="8" fill="#fffbeb" stroke="#b45309" stroke-width="1.2"/>
+<text x="392" y="288" class="bt">Clippo backend wallet</text>
+<text x="392" y="305" class="sm">The attestor. Signs</text>
+<text x="392" y="319" class="sm">registerHuman and approval</text>
+<text x="392" y="333" class="sm">proofs, sends claimFor.</text>
+<rect x="380" y="360" width="186" height="60" rx="8" fill="#f0fdf4" stroke="#15803d" stroke-width="1.2"/>
+<text x="392" y="380" class="bt">Indexer</text>
+<text x="392" y="396" class="sm">cron chain-sync reads escrow</text>
+<text x="392" y="410" class="sm">events into the database</text>
+<rect x="380" y="432" width="186" height="74" rx="8" fill="#f0fdf4" stroke="#15803d" stroke-width="1.2"/>
+<text x="392" y="452" class="bt">Postgres (Neon)</text>
+<text x="392" y="468" class="sm">Prisma, schema.prisma.</text>
+<text x="392" y="482" class="sm">Deployed: [SEED] demo rows.</text>
+<rect x="700" y="120" width="476" height="410" rx="14" fill="#ecfdf5" stroke="#34d399" stroke-width="1.4"/>
+<text x="716" y="142" class="zone" fill="#065f46">Arc testnet (chain 5042002)</text>
+<rect x="716" y="152" width="444" height="242" rx="8" fill="#ffffff" stroke="#047857" stroke-width="2"/>
+<text x="730" y="174" class="bt">ClippoEscrow</text>
+<text x="1146" y="174" class="sm" text-anchor="end">Contracts: Foundry + forge script</text>
+<text x="730" y="196" class="lab">Payout modes</text>
+<rect x="830" y="182" width="69" height="20" rx="10" fill="#d1fae5" stroke="#047857" stroke-width="1"/>
+<text x="864.5" y="196" class="lab" text-anchor="middle">PerView</text>
+<rect x="907" y="182" width="83" height="20" rx="10" fill="#d1fae5" stroke="#047857" stroke-width="1"/>
+<text x="948.5" y="196" class="lab" text-anchor="middle">PoolShare</text>
+<rect x="998" y="182" width="90" height="20" rx="10" fill="#d1fae5" stroke="#047857" stroke-width="1"/>
+<text x="1043" y="196" class="lab" text-anchor="middle">HumanSplit</text>
+<text x="730" y="226" class="sub">Two-sided fees go to the treasury</text>
+<text x="730" y="245" class="sub">Retention: credits wait 7 days, in tranches</text>
+<text x="730" y="264" class="sub">Onchain disputes: disputeCredits, resolveDispute,</text>
+<text x="742" y="283" class="sub">a timeout releases the credits to the creator</text>
+<text x="730" y="302" class="sub">claim and claimFor: a payout can only reach the creator</text>
+<text x="730" y="321" class="sub">registerHuman, humanOf: only linked wallets are credited</text>
+<text x="730" y="340" class="sub">Signed approvals: approveCampaign, approveSplit (proof)</text>
+<text x="730" y="359" class="sub">Close after the deadline: unspent pool returns to the brand</text>
+<text x="730" y="378" class="sub">Reject or no approval in time: full refund to the brand</text>
+<rect x="716" y="424" width="96" height="94" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="1.2"/>
+<text x="728" y="446" class="bt">USDC</text>
+<text x="728" y="464" class="sm">Settlement</text>
+<text x="728" y="478" class="sm">and gas token</text>
+<rect x="826" y="424" width="178" height="94" rx="8" fill="#ffffff" stroke="#64748b" stroke-width="1.2"/>
+<text x="838" y="444" class="bt2">ClippoReportReceiver</text>
+<text x="838" y="461" class="sm">The only reportAdapter.</text>
+<text x="838" y="474" class="sm">Accepts only the Chainlink</text>
+<text x="838" y="487" class="sm">forwarder + workflow checks</text>
+<rect x="838" y="494" width="104" height="16" rx="8" fill="#fef3c7" stroke="#b45309" stroke-width="1"/>
+<text x="890" y="506" class="chip" text-anchor="middle" fill="#78350f">simulation mode</text>
+<rect x="1026" y="424" width="134" height="94" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="1.2"/>
+<text x="1038" y="444" class="bt">Forwarder</text>
+<text x="1038" y="461" class="sm">Chainlink test</text>
+<text x="1038" y="474" class="sm">forwarder on Arc</text>
+<text x="1038" y="487" class="sm">(simulation).</text>
+<g transform="translate(0,18)">
+<rect x="24" y="548" width="568" height="262" rx="14" fill="#faf5ff" stroke="#c084fc" stroke-width="1.4"/>
+<text x="40" y="570" class="zone" fill="#6b21a8">Off-chain services</text>
+<rect x="40" y="584" width="168" height="208" rx="8" fill="#ffffff" stroke="#7e22ce" stroke-width="1.2"/>
+<text x="52" y="606" class="bt">AI verifier</text>
+<text x="52" y="624" class="sm">Claude or Gemini</text>
+<text x="52" y="638" class="sm">(LLM_PROVIDER).</text>
+<text x="52" y="662" class="sm">Checks each clip against</text>
+<text x="52" y="676" class="sm">the brand's brief and</text>
+<text x="52" y="690" class="sm">returns APPROVE, REJECT</text>
+<text x="52" y="704" class="sm">or NEEDS_HUMAN.</text>
+<text x="52" y="732" class="sm">A verdict is only an input.</text>
+<text x="52" y="746" class="sm">It never moves money.</text>
+<text x="52" y="778" class="mono">web/src/lib/ai</text>
+<rect x="224" y="584" width="168" height="208" rx="8" fill="#ffffff" stroke="#7e22ce" stroke-width="1.2"/>
+<text x="236" y="606" class="bt">World</text>
+<rect x="236" y="618" width="144" height="78" rx="8" fill="#faf5ff" stroke="#d8b4fe" stroke-width="1"/>
+<text x="246" y="636" class="lab">IDKit</text>
+<text x="246" y="652" class="sm">Proof of human at</text>
+<text x="246" y="665.5" class="sm">sign-up. Links a wallet</text>
+<text x="246" y="679" class="sm">to one human.</text>
+<rect x="236" y="704" width="144" height="78" rx="8" fill="#faf5ff" stroke="#d8b4fe" stroke-width="1"/>
+<text x="246" y="722" class="lab">auth.world.org OIDC</text>
+<text x="246" y="738" class="sm">Step-up approval that</text>
+<text x="246" y="751.5" class="sm">releases an agent's</text>
+<text x="246" y="765" class="sm">split.</text>
+<rect x="408" y="584" width="168" height="208" rx="8" fill="#ffffff" stroke="#b91c1c" stroke-width="1.2"/>
+<text x="420" y="606" class="bt">YouTube Data API</text>
+<text x="420" y="622" class="sm">External system</text>
+<text x="420" y="650" class="sm">Clippo polls view counts</text>
+<text x="420" y="664" class="sm">for its own Pending</text>
+<text x="420" y="678" class="sm">numbers.</text>
+<text x="420" y="706" class="sm">CRE nodes read videos</text>
+<text x="420" y="720" class="sm">and channels themselves</text>
+<text x="420" y="734" class="sm">for Confirmed views.</text>
+<rect x="700" y="548" width="476" height="262" rx="14" fill="#eff6ff" stroke="#60a5fa" stroke-width="1.4"/>
+<text x="716" y="570" class="zone" fill="#1e40af">Chainlink CRE</text>
+<rect x="716" y="584" width="444" height="206" rx="8" fill="#ffffff" stroke="#1d4ed8" stroke-width="1.6"/>
+<text x="730" y="606" class="bt">Workflow clippo-settlement</text>
+<text x="1146" y="606" class="sm" text-anchor="end">cre/workflows/clippo-settlement</text>
+<text x="730" y="632" class="lab">Trigger</text>
+<rect x="790" y="618" width="82" height="20" rx="10" fill="#e2e8f0" stroke="#64748b" stroke-width="1"/>
+<text x="831" y="632" class="chip" text-anchor="middle" fill="#1e293b">cron, daily</text>
+<rect x="880" y="618" width="112" height="20" rx="10" fill="#e2e8f0" stroke="#64748b" stroke-width="1"/>
+<text x="936" y="632" class="chip" text-anchor="middle" fill="#1e293b">HTTP, on demand</text>
+<circle cx="737" cy="658" r="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1"/>
+<text x="737" y="662" class="lab" text-anchor="middle">a</text>
+<text x="754" y="662" class="sub">GET /api/snapshots/clips: which clips to check</text>
+<circle cx="737" cy="680" r="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1"/>
+<text x="737" y="684" class="lab" text-anchor="middle">b</text>
+<text x="754" y="684" class="sub">Each node reads YouTube videos and channels (key = CRE secret)</text>
+<circle cx="737" cy="702" r="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1"/>
+<text x="737" y="706" class="lab" text-anchor="middle">c</text>
+<text x="754" y="706" class="sub">Keep a clip only if the channel bio holds clippo:&lt;wallet&gt;</text>
+<circle cx="737" cy="724" r="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1"/>
+<text x="737" y="728" class="lab" text-anchor="middle">d</text>
+<text x="754" y="728" class="sub">Nodes agree on the median view count</text>
+<circle cx="737" cy="746" r="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1"/>
+<text x="737" y="750" class="lab" text-anchor="middle">e</text>
+<text x="754" y="750" class="sub">Signed report goes to the forwarder</text>
+<rect x="730" y="760" width="206" height="20" rx="10" fill="#fef3c7" stroke="#b45309" stroke-width="1"/>
+<text x="833" y="774" class="chip" text-anchor="middle" fill="#78350f">Simulated with the CLI on real Arc</text>
+<rect x="944" y="760" width="90" height="20" rx="10" fill="#fef3c7" stroke="#b45309" stroke-width="1"/>
+<text x="989" y="774" class="chip" text-anchor="middle" fill="#78350f">Not deployed</text>
+<rect x="1042" y="760" width="104" height="20" rx="10" fill="#fef3c7" stroke="#b45309" stroke-width="1"/>
+<text x="1094" y="774" class="chip" text-anchor="middle" fill="#78350f">1 simulated node</text>
+</g>
+<path d="M152 195 L176 197" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#mSlate)" stroke-linejoin="round"/>
+<path d="M152 269 L176 211" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#mSlate)" stroke-linejoin="round"/>
+<path d="M152 343 L176 225" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#mSlate)" stroke-linejoin="round"/>
+<circle cx="164" cy="240" r="9.5" fill="#047857" stroke="#ffffff" stroke-width="1.6"/>
+<text x="164" y="244.2" class="badge" text-anchor="middle">3</text>
+<path d="M270 240 L270 266" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#mSlate)" stroke-linejoin="round"/>
+<path d="M358 308 L378 308" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#mSlate)" stroke-linejoin="round"/>
+<path d="M358 390 L378 390" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#mSlate)" stroke-linejoin="round"/>
+<path d="M358 468 L378 468" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#mSlate)" stroke-linejoin="round"/>
+<path d="M568 196 L714 196" fill="none" stroke="#047857" stroke-width="2.6" marker-end="url(#mGreen)" stroke-linejoin="round"/>
+<circle cx="616" cy="196" r="9.5" fill="#047857" stroke="#ffffff" stroke-width="1.6"/>
+<text x="616" y="200.2" class="badge" text-anchor="middle">1</text>
+<text x="632" y="191" class="lab halo">fund</text>
+<path d="M568 218 L714 218" fill="none" stroke="#047857" stroke-width="2.6" marker-end="url(#mGreen)" stroke-linejoin="round"/>
+<circle cx="616" cy="218" r="9.5" fill="#047857" stroke="#ffffff" stroke-width="1.6"/>
+<text x="616" y="222.2" class="badge" text-anchor="middle">2</text>
+<text x="632" y="213" class="lab halo">approve</text>
+<path d="M714 240 L570 240" fill="none" stroke="#047857" stroke-width="2.6" marker-end="url(#mGreen)" stroke-linejoin="round"/>
+<circle cx="616" cy="240" r="9.5" fill="#047857" stroke="#ffffff" stroke-width="1.6"/>
+<text x="616" y="244.2" class="badge" text-anchor="middle">8</text>
+<text x="632" y="235" class="lab halo">close</text>
+<path d="M568 296 L714 296" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#mSlate)" stroke-linejoin="round"/>
+<text x="612" y="290" class="sm">registerHuman</text>
+<path d="M568 326 L714 326" fill="none" stroke="#047857" stroke-width="2.6" marker-end="url(#mGreen)" stroke-linejoin="round"/>
+<circle cx="616" cy="326" r="9.5" fill="#047857" stroke="#ffffff" stroke-width="1.6"/>
+<text x="616" y="330.2" class="badge" text-anchor="middle">7</text>
+<text x="632" y="321" class="lab halo">claimFor</text>
+<path d="M714 388 L568 388" fill="none" stroke="#475569" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#mSlate)" stroke-linejoin="round"/>
+<text x="612" y="382" class="sm">events</text>
+<path d="M202 508 L202 602" fill="none" stroke="#047857" stroke-width="2.6" marker-end="url(#mGreen)" stroke-linejoin="round"/>
+<circle cx="202" cy="548" r="9.5" fill="#047857" stroke="#ffffff" stroke-width="1.6"/>
+<text x="202" y="552.2" class="badge" text-anchor="middle">4</text>
+<text x="188" y="552" class="lab halo" text-anchor="end">verdict</text>
+<path d="M296 508 L296 602" fill="none" stroke="#475569" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#mSlate)" stroke-linejoin="round"/>
+<text x="288" y="543" class="sm halo" text-anchor="end">verify proof,</text>
+<text x="288" y="557" class="sm halo" text-anchor="end">OIDC code</text>
+<path d="M346 508 L470 602" fill="none" stroke="#475569" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#mSlate)" stroke-linejoin="round"/>
+<path d="M716 718 L580 718" fill="none" stroke="#475569" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#mSlate)" stroke-linejoin="round"/>
+<text x="650" y="710" class="sm" text-anchor="middle">nodes</text>
+<text x="650" y="738" class="sm" text-anchor="middle">read views</text>
+<path d="M716 658 L652 658 L652 548 L324 548 L324 510" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#mSlate)" stroke-linejoin="round"/>
+<text x="420" y="542" class="sm">manifest: GET /api/snapshots/clips</text>
+<path d="M1092 602 L1092 520" fill="none" stroke="#047857" stroke-width="2.6" marker-end="url(#mGreen)" stroke-linejoin="round"/>
+<circle cx="1092" cy="548" r="9.5" fill="#047857" stroke="#ffffff" stroke-width="1.6"/>
+<text x="1092" y="552.2" class="badge" text-anchor="middle">5</text>
+<text x="1106" y="552" class="lab">signed report</text>
+<path d="M1026 480 L1006 480" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#mSlate)" stroke-linejoin="round"/>
+<path d="M912 424 L912 396" fill="none" stroke="#047857" stroke-width="2.6" marker-end="url(#mGreen)" stroke-linejoin="round"/>
+<circle cx="932" cy="410" r="9.5" fill="#047857" stroke="#ffffff" stroke-width="1.6"/>
+<text x="932" y="414.2" class="badge" text-anchor="middle">6</text>
+<text x="948" y="414" class="lab">reportViews</text>
+<path d="M760 424 L760 396" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#mSlate)" marker-start="url(#mSlateS)" stroke-linejoin="round"/>
+<rect x="24" y="864" width="1152" height="134" rx="14" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.2"/>
+<text x="40" y="886" class="zone" fill="#047857">Money flow, per-view campaign (numbers match the green arrows)</text>
+<circle cx="50" cy="913" r="9.5" fill="#047857" stroke="#ffffff" stroke-width="1.6"/>
+<text x="50" y="917.2" class="badge" text-anchor="middle">1</text>
+<text x="68" y="914" class="sub">Brand funds the USDC pool.</text>
+<text x="68" y="929" class="sub">The campaign fee is held.</text>
+<circle cx="334" cy="913" r="9.5" fill="#047857" stroke="#ffffff" stroke-width="1.6"/>
+<text x="334" y="917.2" class="badge" text-anchor="middle">2</text>
+<text x="352" y="914" class="sub">Admin approves the campaign.</text>
+<text x="352" y="929" class="sub">The fee goes to the treasury.</text>
+<circle cx="618" cy="913" r="9.5" fill="#047857" stroke="#ffffff" stroke-width="1.6"/>
+<text x="618" y="917.2" class="badge" text-anchor="middle">3</text>
+<text x="636" y="914" class="sub">Creator posts a clip link</text>
+<text x="636" y="929" class="sub">for the campaign.</text>
+<circle cx="902" cy="913" r="9.5" fill="#047857" stroke="#ffffff" stroke-width="1.6"/>
+<text x="902" y="917.2" class="badge" text-anchor="middle">4</text>
+<text x="920" y="914" class="sub">The AI verdict checks the clip</text>
+<text x="920" y="929" class="sub">against the brand's brief.</text>
+<circle cx="50" cy="957" r="9.5" fill="#047857" stroke="#ffffff" stroke-width="1.6"/>
+<text x="50" y="961.2" class="badge" text-anchor="middle">5</text>
+<text x="68" y="958" class="sub">CRE nodes read YouTube and sign</text>
+<text x="68" y="973" class="sub">a report with the median views.</text>
+<circle cx="334" cy="957" r="9.5" fill="#047857" stroke="#ffffff" stroke-width="1.6"/>
+<text x="334" y="961.2" class="badge" text-anchor="middle">6</text>
+<text x="352" y="958" class="sub">Receiver calls reportViews. The escrow</text>
+<text x="352" y="973" class="sub">credits the creator, held 7 days.</text>
+<circle cx="618" cy="957" r="9.5" fill="#047857" stroke="#ffffff" stroke-width="1.6"/>
+<text x="618" y="961.2" class="badge" text-anchor="middle">7</text>
+<text x="636" y="958" class="sub">Creator or the Clippo wallet claims.</text>
+<text x="636" y="973" class="sub">Pay can only reach the creator.</text>
+<circle cx="902" cy="957" r="9.5" fill="#047857" stroke="#ffffff" stroke-width="1.6"/>
+<text x="902" y="961.2" class="badge" text-anchor="middle">8</text>
+<text x="920" y="958" class="sub">After the deadline anyone can close.</text>
+<text x="920" y="973" class="sub">Unspent pool returns to the brand.</text>
+<rect x="24" y="1014" width="740" height="104" rx="14" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.2"/>
+<text x="40" y="1036" class="zone" fill="#6b21a8">HumanSplit campaigns (no CRE step)</text>
+<rect x="40" y="1052" width="138" height="42" rx="8" fill="#ffffff" stroke="#7e22ce" stroke-width="1.2"/>
+<text x="48" y="1070" class="sm">Agent proposes</text>
+<text x="48" y="1084" class="sm">a split</text>
+<path d="M180 1073 L200 1073" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#mSlate)" stroke-linejoin="round"/>
+<rect x="202" y="1052" width="138" height="42" rx="8" fill="#ffffff" stroke="#7e22ce" stroke-width="1.2"/>
+<text x="210" y="1070" class="sm">Human step-up at</text>
+<text x="210" y="1084" class="sm">auth.world.org</text>
+<path d="M342 1073 L362 1073" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#mSlate)" stroke-linejoin="round"/>
+<rect x="364" y="1052" width="150" height="42" rx="8" fill="#ffffff" stroke="#7e22ce" stroke-width="1.2"/>
+<text x="372" y="1070" class="sm">Clippo wallet signs</text>
+<text x="372" y="1084" class="sm">the approval proof</text>
+<path d="M516 1073 L536 1073" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#mSlate)" stroke-linejoin="round"/>
+<rect x="538" y="1052" width="190" height="42" rx="8" fill="#ffffff" stroke="#7e22ce" stroke-width="1.2"/>
+<text x="546" y="1070" class="sm">Approver sends approveSplit,</text>
+<text x="546" y="1084" class="sm">then the creator claims</text>
+<rect x="780" y="1014" width="396" height="104" rx="14" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.2"/>
+<text x="796" y="1036" class="zone" fill="#334155">Legend</text>
+<path d="M796 1058 L836 1058" fill="none" stroke="#047857" stroke-width="2.6" marker-end="url(#mGreen)" stroke-linejoin="round"/>
+<circle cx="816" cy="1058" r="9.5" fill="#047857" stroke="#ffffff" stroke-width="1.6"/>
+<text x="816" y="1062.2" class="badge" text-anchor="middle">n</text>
+<text x="846" y="1062" class="sub">Money flow step</text>
+<path d="M796 1077 L836 1077" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#mSlate)" stroke-linejoin="round"/>
+<text x="846" y="1081" class="sub">Call or transaction</text>
+<path d="M796 1096 L836 1096" fill="none" stroke="#475569" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#mSlate)" stroke-linejoin="round"/>
+<text x="846" y="1100" class="sub">Read (events, polls)</text>
+<rect x="1000" y="1048" width="150" height="18" rx="9" fill="#fef3c7" stroke="#b45309" stroke-width="1"/>
+<text x="1075" y="1061" class="chip" text-anchor="middle" fill="#78350f">Simulated or unproven</text>
+<rect x="1000" y="1072" width="150" height="18" rx="9" fill="#e2e8f0" stroke="#64748b" stroke-width="1"/>
+<text x="1075" y="1085" class="chip" text-anchor="middle" fill="#1e293b">Seeded demo data</text>
+<text x="24" y="1144" class="sm">Contracts: Foundry + forge script. Optional ClippoReferral and ClippoCreatorProfile modules are off by default and not drawn.</text>
 </svg>
