@@ -36,8 +36,10 @@ export interface LlmClient {
 export const DEFAULT_MODEL = "claude-sonnet-5-5";
 /** Stable, free-tier, fast model with structured output support: https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite */
 export const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
+/** OpenAI chat-completions model with JSON mode; override with OPENAI_MODEL. */
+export const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
 
-export type LlmProviderName = "anthropic" | "gemini";
+export type LlmProviderName = "anthropic" | "gemini" | "openai";
 
 /* ---------------- errors ---------------- */
 
@@ -250,6 +252,71 @@ export class GeminiLlm implements LlmTransport {
   }
 }
 
+/**
+ * OpenAI Chat Completions via plain fetch (no SDK dependency):
+ *   POST https://api.openai.com/v1/chat/completions, Authorization: Bearer <key>.
+ * JSON mode (response_format json_object) forces a valid JSON object; callers still validate with zod.
+ * system carries OUR system prompt (identical text to the other providers) plus a short "return JSON" nudge
+ * that JSON mode requires. OPENAI_BASE_URL overrides the endpoint for Azure/compatible gateways.
+ */
+export class OpenAiLlm implements LlmTransport {
+  readonly mode = "real" as const;
+  readonly provider = "openai" as const;
+  private base = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/+$/, "");
+  constructor(
+    private apiKey: string,
+    readonly model = DEFAULT_OPENAI_MODEL,
+    private fetchImpl: FetchLike = fetch as unknown as FetchLike,
+    private timeoutMs = Number(process.env.OPENAI_TIMEOUT_MS) || 30_000,
+  ) {}
+
+  async send(req: LlmRequest): Promise<string> {
+    const body: Record<string, unknown> = {
+      model: this.model,
+      messages: [
+        { role: "system", content: req.system + "\nReturn a single JSON object." },
+        { role: "user", content: req.user },
+      ],
+      // max_completion_tokens is the forward-compatible cap (works for gpt-4o/4o-mini and the o-series).
+      max_completion_tokens: req.maxTokens ?? 1024,
+      response_format: { type: "json_object" },
+    };
+    let res: Awaited<ReturnType<FetchLike>>;
+    try {
+      res = await this.fetchImpl(`${this.base}/chat/completions`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}` },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(this.timeoutMs),
+      });
+    } catch (e) {
+      throw new LlmProviderError(e instanceof Error ? e.message : "OpenAI network error");
+    }
+    const text = await res.text();
+    if (!res.ok) {
+      let msg = text.slice(0, 300);
+      try {
+        const j = JSON.parse(text) as { error?: { message?: string } };
+        msg = j.error?.message ?? msg;
+      } catch {
+        /* non-JSON error body */
+      }
+      const retryAfter = parseRetryAfter(res.headers.get("retry-after"));
+      const exhausted = res.status === 429 && /insufficient_quota|exceeded your current quota/i.test(text);
+      throw new LlmProviderError(`OpenAI ${res.status}: ${msg}`, res.status, retryAfter, exhausted);
+    }
+    let j: { choices?: { message?: { content?: string } }[] };
+    try {
+      j = JSON.parse(text);
+    } catch {
+      throw new LlmProviderError("OpenAI returned a non-JSON response", 502);
+    }
+    const out = (j.choices?.[0]?.message?.content ?? "").trim();
+    if (!out) throw new LlmProviderError("OpenAI returned no text (the response may have been filtered)", 502);
+    return out;
+  }
+}
+
 /* ---------------- resilience layer ---------------- */
 
 export interface ResilienceOptions {
@@ -425,7 +492,7 @@ export class ResilientLlm implements LlmClient {
 /* ---------------- provider selection ---------------- */
 
 const NOT_CONFIGURED_MSG =
-  "AI is not configured: set GEMINI_API_KEY (free key from https://aistudio.google.com/apikey) or ANTHROPIC_API_KEY, and optionally LLM_PROVIDER=gemini|anthropic";
+  "AI is not configured: set OPENAI_API_KEY, GEMINI_API_KEY (free key from https://aistudio.google.com/apikey) or ANTHROPIC_API_KEY, and optionally LLM_PROVIDER=openai|gemini|anthropic";
 
 export interface ResolvedProvider {
   provider: LlmProviderName;
@@ -433,28 +500,38 @@ export interface ResolvedProvider {
   model: string;
 }
 
-/** LLM_PROVIDER wins; otherwise the only configured key; if both keys exist, Anthropic. Neither -> 503 NOT_CONFIGURED. */
+/** LLM_PROVIDER wins; otherwise the only configured key; precedence anthropic > openai > gemini. Neither -> 503 NOT_CONFIGURED. */
 export function resolveProvider(e: Record<string, string | undefined> = process.env): ResolvedProvider {
   const get = (k: string) => e[k]?.trim() || undefined;
   const anth = get("ANTHROPIC_API_KEY");
   const gem = get("GEMINI_API_KEY");
+  const oai = get("OPENAI_API_KEY");
   const forced = get("LLM_PROVIDER")?.toLowerCase();
   let provider: LlmProviderName;
   if (forced) {
-    if (forced !== "anthropic" && forced !== "gemini") throw new ApiError(503, "NOT_CONFIGURED", `LLM_PROVIDER must be "anthropic" or "gemini" (got "${forced}")`);
+    if (forced !== "anthropic" && forced !== "gemini" && forced !== "openai")
+      throw new ApiError(503, "NOT_CONFIGURED", `LLM_PROVIDER must be "anthropic", "gemini" or "openai" (got "${forced}")`);
     provider = forced;
     if (provider === "anthropic" && !anth) throw new ApiError(503, "NOT_CONFIGURED", "AI provider anthropic is not configured: set ANTHROPIC_API_KEY (or use LLM_PROVIDER=gemini with GEMINI_API_KEY)");
     if (provider === "gemini" && !gem) throw new ApiError(503, "NOT_CONFIGURED", "AI provider gemini is not configured: set GEMINI_API_KEY (free key from https://aistudio.google.com/apikey) (or use LLM_PROVIDER=anthropic with ANTHROPIC_API_KEY)");
+    if (provider === "openai" && !oai) throw new ApiError(503, "NOT_CONFIGURED", "AI provider openai is not configured: set OPENAI_API_KEY (or use LLM_PROVIDER=gemini with GEMINI_API_KEY)");
   } else if (anth) provider = "anthropic";
+  else if (oai) provider = "openai";
   else if (gem) provider = "gemini";
   else throw new ApiError(503, "NOT_CONFIGURED", NOT_CONFIGURED_MSG);
   return provider === "anthropic"
     ? { provider, apiKey: anth!, model: get("ANTHROPIC_MODEL") || DEFAULT_MODEL }
-    : { provider, apiKey: gem!, model: get("GEMINI_TEXT_MODEL") || DEFAULT_GEMINI_MODEL };
+    : provider === "openai"
+      ? { provider, apiKey: oai!, model: get("OPENAI_MODEL") || DEFAULT_OPENAI_MODEL }
+      : { provider, apiKey: gem!, model: get("GEMINI_TEXT_MODEL") || DEFAULT_GEMINI_MODEL };
 }
 
 export function createTransport(r: ResolvedProvider): LlmTransport {
-  return r.provider === "anthropic" ? new AnthropicLlm(r.apiKey, r.model) : new GeminiLlm(r.apiKey, r.model);
+  return r.provider === "anthropic"
+    ? new AnthropicLlm(r.apiKey, r.model)
+    : r.provider === "openai"
+      ? new OpenAiLlm(r.apiKey, r.model)
+      : new GeminiLlm(r.apiKey, r.model);
 }
 
 let shared: { sig: string; llm: LlmClient } | null = null;
