@@ -28,6 +28,7 @@
     "@worldcoin/agentkit": "^0.2.1",
     "@worldcoin/idkit": "^4.6.0",
     "@worldcoin/idkit-core": "^4.6.0",
+    "jose": "^6.2.15",
     "next": "16.4.3",
     "react": "19.3.0",
     "react-dom": "19.3.0",
