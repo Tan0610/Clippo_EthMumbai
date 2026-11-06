@@ -9,6 +9,7 @@ import {ClippoCreatorProfile} from "../src/ClippoCreatorProfile.sol";
 
 /// @notice One-shot production deploy (Arc testnet). Does NOT deploy MockUSDC (see DeployMock.s.sol).
 /// REQUIRED env: ADMIN_ADDRESS, FORWARDER_ADDRESS (Chainlink CRE KeystoneForwarder), UPDATER_ADDRESS,
+///   HUMAN_ATTESTOR_ADDRESS (backend key that attests World ID results; cannot be changed later),
 ///   EXPECTED_WORKFLOW_OWNER (CRE workflow owner address; the receiver rejects reports from any other workflow owner)
 ///   unless INSECURE_SKIP_WORKFLOW_CHECK is true (see below).
 /// OPTIONAL env (default):
@@ -18,7 +19,8 @@ import {ClippoCreatorProfile} from "../src/ClippoCreatorProfile.sol";
 ///     must be skipped for `cre workflow simulate --broadcast`. NEVER set true for a production deployment.
 ///   USDC_ADDRESS (0x3600...0000 Arc testnet USDC), TREASURY_ADDRESS (ADMIN_ADDRESS),
 ///   RECORDER_ADDRESS (UPDATER_ADDRESS; referral recorder), GUARDIAN_ADDRESS (ADMIN_ADDRESS; referral guardian),
-///   CAMPAIGNER_FEE_BPS (25), CREATOR_FEE_BPS (25) [max 50 each], RETENTION_SECONDS (604800), HIGH_VALUE_THRESHOLD (1000000000),
+///   CAMPAIGNER_FEE_BPS (25), CREATOR_FEE_BPS (25) [max 50 each], RETENTION_SECONDS (604800), GRACE_SECONDS (86400),
+///   HIGH_VALUE_THRESHOLD (1000000000),
 ///   REFERRAL_CUT_BPS (500, max 1000), REFERRAL_CAP (100000000), REFERRAL_COOLDOWN (86400).
 /// The broadcaster (deployer) owns everything during setup, then ownership of all contracts moves to ADMIN_ADDRESS
 /// and the deployer's escrow admin right is revoked (unless deployer == ADMIN_ADDRESS).
@@ -50,6 +52,7 @@ contract Deploy is Script {
         address admin = _required("ADMIN_ADDRESS");
         address forwarder = _required("FORWARDER_ADDRESS");
         address updater = _required("UPDATER_ADDRESS");
+        address attestor = _required("HUMAN_ATTESTOR_ADDRESS");
         // Local anvil/mock runs (ALLOW_ANY_CHAIN=true) default to skipping the workflow-metadata check; everything else
         // must name the expected workflow owner (fail closed).
         bool skipCheck = vm.envOr("INSECURE_SKIP_WORKFLOW_CHECK", vm.envOr("ALLOW_ANY_CHAIN", false));
@@ -72,13 +75,14 @@ contract Deploy is Script {
         vm.startBroadcast();
         (, address deployer,) = vm.readCallers();
 
-        escrow = new ClippoEscrow(usdc, treasury, deployer);
+        escrow = new ClippoEscrow(usdc, treasury, deployer, attestor);
         receiver = new ClippoReportReceiver(address(escrow), forwarder, deployer, wfOwner, skipCheck);
         if (wfId != bytes32(0)) receiver.setExpectedWorkflowId(wfId);
         if (wfName != bytes10(0)) receiver.setExpectedWorkflowName(wfName);
         escrow.setReportAdapter(address(receiver));
         escrow.setFees(uint16(cb), uint16(rb));
         escrow.setRetentionPeriod(uint64(vm.envOr("RETENTION_SECONDS", uint256(7 days))));
+        escrow.setGracePeriod(uint64(vm.envOr("GRACE_SECONDS", uint256(1 days))));
         escrow.setHighValueThreshold(vm.envOr("HIGH_VALUE_THRESHOLD", uint256(1_000e6)));
 
         referral = new ClippoReferral(
@@ -119,6 +123,7 @@ contract Deploy is Script {
         console.log("REFERRAL_ADDRESS=%s", address(referral));
         console.log("PROFILE_ADDRESS=%s", address(profile));
         console.log("REPORT_RECEIVER_ADDRESS=%s", address(receiver));
+        console.log("HUMAN_ATTESTOR_ADDRESS=%s", attestor);
         console.log("EXPECTED_WORKFLOW_OWNER=%s", wfOwner);
         console.log("USDC_ADDRESS=%s", usdc);
     }
