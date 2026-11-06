@@ -25,13 +25,13 @@
 
   <!-- Header -->
   <text x="40" y="46" class="title">Clippo — Advanced Stablecoin Escrow on Arc</text>
-  <text x="40" y="68" class="sub">Clipping-campaign marketplace · USDC escrow with conditional release, vesting &amp; revenue splits · Built and deployed in Arc Studio</text>
+  <text x="40" y="68" class="sub">Clipping-campaign marketplace · USDC escrow with conditional release, retention window &amp; revenue splits · Foundry-tested · Arc Studio project not created yet</text>
 
   <!-- Arc Studio origin banner -->
   <rect x="40" y="88" width="1040" height="40" rx="8" fill="#eef2ff" stroke="#c7d2fe"/>
   <circle cx="64" cy="108" r="6" fill="#4f46e5"/>
   <text x="80" y="112" class="box" fill="#3730a3">Arc Studio</text>
-  <text x="168" y="112" class="boxsub">prompts → writes &amp; tests ClippoEscrow.sol → deploys to Arc testnet → “Push to GitHub”.  The contract below originates here.</text>
+  <text x="168" y="112" class="boxsub">Project not created yet (every Arc prize requires one). ClippoEscrow.sol below was written and tested in Foundry.</text>
 
   <!-- ===================== ZONE: USERS ===================== -->
   <text x="40" y="168" class="zone" fill="#64748b">Users</text>
@@ -77,7 +77,7 @@
   <!-- supporting services -->
   <rect x="522" y="392" width="184" height="82" rx="8" fill="#faf5ff" stroke="#e9d5ff"/>
   <text x="542" y="418" class="box">Services</text>
-  <text x="542" y="438" class="boxsub">AI verifier (Claude)</text>
+  <text x="542" y="438" class="boxsub">AI verifier (Claude/Gemini)</text>
   <text x="542" y="454" class="boxsub">World ID · YouTube API</text>
   <text x="542" y="470" class="boxsub" font-style="italic" fill="#6b21a8">anti-fraud gate</text>
 
@@ -94,7 +94,7 @@
   <text x="844" y="285" class="boxsub" fill="#065f46">Lifecycle: Funded → Approved → Closed / Rejected</text>
 
   <text x="832" y="316" class="boxsub" font-weight="700" fill="#065f46">Three conditional modes</text>
-  <text x="844" y="336" class="boxsub">• PerView — vests over 7-day retention</text>
+  <text x="844" y="336" class="boxsub">• PerView — 7-day retention window</text>
   <text x="844" y="354" class="boxsub">• HumanSplit — World-ID-gated splits</text>
   <text x="844" y="372" class="boxsub">• PoolShare — pro-rata payout at close</text>
   <text x="832" y="398" class="boxsub">Two-sided fees ≤ 50 bps · deadline refunds</text>
@@ -145,6 +145,6 @@
   <!-- Footer / money-flow legend -->
   <rect x="40" y="648" width="1040" height="48" rx="8" fill="#ffffff" stroke="#e2e8f0"/>
   <text x="56" y="669" class="boxsub" font-weight="700" fill="#0f172a">Money flow:</text>
-  <text x="140" y="669" class="boxsub">① approve USDC + createCampaign (pool escrowed, fee held) → ② admin approveCampaign (fee → treasury) → ③ PerView credits accrue &amp; vest →</text>
-  <text x="140" y="686" class="boxsub">④ creator claim() net of fee → ⑤ closeCampaign refunds the unspent pool. Every step is a real Arc tx; the DB only mirrors it.</text>
+  <text x="140" y="669" class="boxsub">① approve USDC + createCampaign (pool escrowed, fee held) → ② admin approveCampaign (fee → treasury) → ③ PerView credits (CRE reports) mature →</text>
+  <text x="140" y="686" class="boxsub">④ claim()/claimFor() pays creator net of fee → ⑤ closeCampaign refunds unspent pool. DB mirrors chain. The enforcing design has not run on real Arc.</text>
 </svg>
