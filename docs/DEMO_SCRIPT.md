@@ -1,21 +1,23 @@
-# Demo script (target 4:30, hard cap 5:00)
+# Demo script (target 3:50, hard cap 4:00)
+
+ETHGlobal rule: 2 to 4 minutes, 720p or better, no AI voiceover, not sped up. Anything over 4:00 is rejected. The timings below add up to 3:50. They are a plan and have not been rehearsed: time a real take and cut rows if it runs past 3:50. The old 4:30 / 5:00 targets were wrong.
 
 Setup before recording: `cd web && npm run db:local` (or a real Postgres), `npx prisma migrate deploy`, `npm run doctor`, then **stop anything else holding the single local DB connection** and seed: `node --env-file-if-exists=.env.local --env-file-if-exists=.env scripts/seed-demo.mjs --reset` (add `--ui-only` on a local DB to lay out screens without a chain), then `npm run dev`. Three browser profiles or sessions: Campaigner, Creator, Admin (admin wallet = a value from `ADMIN_WALLETS`). Be honest on camera about anything not exercised live (see the README status table). Never record with `NEXT_PUBLIC_DEMO=1`.
 
 | Time | Screen | Say / do |
 | --- | --- | --- |
-| 0:00 | Landing | One line: brands fund a USDC pool, verified humans clip, AI checks, escrow on Arc pays, AI never moves money alone. |
-| 0:20 | Arc Studio project (URL from checklist) then explorer | Show the Studio project and the deployed `ClippoEscrow`. State what was built in Studio. |
-| 0:45 | Campaigner: `/desk/new` wizard | Type an idea, press the buttons (YouTube, Pool/Per view, approver), accept the AI story (note `aiMode`). |
-| 1:15 | `/desk/[id]/fund` | Fund the pool in USDC on Arc testnet through the wallet; show the fee range. Without `ESCROW_ADDRESS` the button refuses with a not-configured message: say so, do not fake it. Campaign shows pending admin. |
-| 1:35 | Admin: queue | Approve the campaign. Mention reject refunds the full pool. |
-| 1:50 | Creator: `/join` | Press verify, World sheet. First show failures: Cancel, then Let it expire, then Reuse an old proof. Show account still unverified. Then Verify; account verified. |
-| 2:30 | Creator: channel + submit | Verify channel (code in bio, real platform read). Submit a real clip: AI verdict with reason. Then open the seeded REJECT and NEEDS_HUMAN slips on `/slips/[id]` and the pending appeal. Without `ANTHROPIC_API_KEY`/`YOUTUBE_API_KEY` these calls answer 503: show the seeded verdicts instead and say so. |
-| 3:15 | Admin or campaigner `/bench` | Resolve the NEEDS_HUMAN item by hand. |
-| 3:30 | Campaigner `/desk` human split | Open a HUMAN_SPLIT campaign. The agent proposes the split (Agent Pass). Click release: Agent Pass sheet. Cancel: show "Split not released". Verify: payouts created. |
-| 4:00 | Terminal in `cre/` | `curl <backend>/api/snapshots/latest`, then `npm run simulate`; show the report written (or say simulation output if not broadcast). Explain delta-only crediting. |
-| 4:20 | Creator `/ledger` | Claim; show net of fee. Campaigner closes; unspent returned. |
-| 4:40 | Architecture diagram | Close on `docs/ARCHITECTURE.md` diagram and tracks. |
+| 0:00 | Landing | One line: brands fund a USDC pool, verified humans clip, AI checks, escrow on Arc pays, AI never moves money alone. (15 s) |
+| 0:15 | Arc Studio project (URL from checklist) then explorer | OPEN: Arc Studio has not been used and no project URL exists. If the project exists by recording time, show it and the deployed `ClippoEscrow`. If not, do not claim it: say the contract was written and tested in Foundry and show the explorer address that the app uses. The enforcing escrow is not deployed; say which address the app points to. (20 s) |
+| 0:35 | Campaigner: `/desk/new` wizard | Type an idea, press the buttons (YouTube, Pool/Per view, approver), accept the AI story (note `aiMode`). (20 s) |
+| 0:55 | `/desk/[id]/fund` | Fund the pool in USDC on Arc testnet through the wallet; show the fee range. Without `ESCROW_ADDRESS` the button refuses with a not-configured message: say so, do not fake it. Campaign shows pending admin. (20 s) |
+| 1:15 | Admin: queue | Approve the campaign. Mention reject refunds the full pool. (10 s) |
+| 1:25 | Creator: `/join` | Press verify, World sheet. Show one failure (Cancel), account still unverified, then Verify; account verified. Cut Expire and Reuse unless time allows. The World ID proof is a mocked fake identity, say so. (30 s) |
+| 1:55 | Creator: channel + submit | Verify channel (code in bio, real platform read). Submit a clip: AI verdict with reason. Open the seeded REJECT and NEEDS_HUMAN slips on `/slips/[id]`. Without an LLM key (`ANTHROPIC_API_KEY` or `GEMINI_API_KEY`, per `LLM_PROVIDER`) or without `YOUTUBE_API_KEY`, these calls answer 503 (the live site has no `YOUTUBE_API_KEY`): show the seeded verdicts instead and say so. (30 s) |
+| 2:25 | Admin or campaigner `/bench` | Resolve the NEEDS_HUMAN item by hand. (10 s) |
+| 2:35 | Campaigner `/desk` human split | Open a HUMAN_SPLIT campaign. The agent proposes the split. Click release: the Agent Pass step-up (OIDC redirect to auth.world.org). Cancel: show the "Split not approved" message. Verify: payouts created. Not proven: the step-up has never run against the real issuer or in a browser. If it still has not, say so and show the integration tests, not a live pass. (30 s) |
+| 3:05 | Terminal in `cre/` | `curl <backend>/api/snapshots/daily` (the feed the workflow reads), then `bash scripts/simulate-local.sh` (starts the local anvil fork and a mock feed), or replay `docs/tracks/cre-simulation-output.txt`; show the report written (or say simulation output if not broadcast). `npm run simulate:live` is an empty no-op, do not use it. It is a single-node simulation, nothing is on real Arc, and CRE reads Clippo's snapshot feed, not YouTube. Explain delta-only crediting. (20 s) |
+| 3:25 | Creator `/ledger` (claim) | Needs a matured campaign or HumanSplit; not proven. No live path exists yet: PerView credits are claimable only after the retention window (default 7 days), and close needs the deadline plus grace to have passed. On a fresh campaign Claim answers NothingToClaim and Close answers DeadlineNotReached. Either use a campaign that is already matured and closed, or show the ledger with the claimable amount and say the claim waits for the window. Do not click Claim on a fresh campaign (and not Close either). (15 s) |
+| 3:40 | Architecture diagram | Close on the diagrams in `docs/ARCHITECTURE.md` (current design) and the tracks. Do not show `docs/architecture.svg` until it is updated: it shows the older design. Ends at 3:50. (10 s) |
 
 Click path summary: `/desk/new` -> `/desk/[id]/fund` -> (admin) `/bench` approve -> (creator) `/join` -> `/wire` browse and submit -> `/slips/[id]` verdict and appeal -> `/desk` split -> `/ledger` claim -> close.
 
