@@ -1,15 +1,17 @@
 "use client";
+import { OnchainDisputes } from "./OnchainDisputes";
 import { useState } from "react";
 import Link from "next/link";
-import { actions, agentPass, api, errText, type AgentProposalView, type SplitProposal } from "./api";
+import { actions, agentPass, api, DEMO, errText, mk, type AgentProposalView, type SplitProposal } from "./api";
 import { normalizeSplit, splitHash } from "@/lib/chain/split";
 import { AgentPassPanel } from "./AgentPassPanel";
 import type { Campaign, Submission } from "@/ui-mocks/data";
 import { useAsync, useEscrow, useSession } from "./hooks";
 import { Correction, DemoNote, Empty, Loading, PageHead, TickBar } from "./Bits";
-import { MODE_LABEL, compact, money } from "./format";
+import { MODE_LABEL, money } from "./format";
 import { Stamp } from "./Stamp";
 import { DeskAnalytics } from "./DeskAnalytics";
+import { ClippoCount, ConfirmedViews, hasConfirmed } from "./ConfirmedViews";
 import { WorldCheck, worldFailText, type WorldResult } from "./WorldCheck";
 import type { WorldProof } from "./api";
 import { StepUpApprove, StepUpReturnPanel } from "./StepUpApprove";
@@ -18,6 +20,7 @@ import type { SplitResult } from "./hooks";
 export function DeskView() {
   const camps = useAsync(api.myCampaigns);
   const hold = useAsync(api.needsHuman);
+  const dash = useAsync(mk.deskDash);
   const escrow = useEscrow();
   const s = useSession();
   const [decided, setDecided] = useState<Record<string, string>>({});
@@ -138,7 +141,7 @@ export function DeskView() {
         );
       })}
 
-      {camps.status === "ready" && camps.data.length > 0 && <DeskAnalytics />}
+      {camps.status === "ready" && camps.data.length > 0 && <DeskAnalytics dash={dash} />}
 
       <section aria-labelledby="slips">
         <div className="section-title"><h2 id="slips">Campaigns</h2></div>
@@ -156,7 +159,11 @@ export function DeskView() {
               <caption className="sr">Your campaigns</caption>
               <thead><tr><th scope="col">Campaign</th><th scope="col">Pool used</th><th scope="col" className="n">Allocated</th><th scope="col" className="n">Views</th><th scope="col"><span className="sr">Actions</span></th></tr></thead>
               <tbody>
-                {camps.data.map((c) => (
+                {camps.data.map((c) => {
+                  /* The list route carries no view counts; the dashboard route carries Clippo, confirmed and pending views per campaign. */
+                  const row = dash.status === "ready" ? dash.data.campaigns.find((x) => x.campaignId === c.id) : undefined;
+                  const views = row?.views ?? c.views;
+                  return (
                   <tr key={c.id}>
                     <td className="lead-cell">
                       <Link href={`/slips/${c.id}`} className="handle">{c.title}</Link>
@@ -164,7 +171,9 @@ export function DeskView() {
                     </td>
                     <td data-l="Pool used" style={{ minWidth: 140 }}><TickBar pct={(c.paid / c.pool) * 100} label={`${Math.round((c.paid / c.pool) * 100)} percent used`} /></td>
                     <td className="n" data-l="Allocated">${money(c.paid, 0)} / {money(c.pool, 0)}</td>
-                    <td className="n" data-l="Views">{compact(c.views)}</td>
+                    <td className="n" data-l="Views">
+                      {!hasConfirmed(c.mode) || dash.status === "error" ? <ClippoCount short views={views} /> : dash.status === "loading" ? "…" : <ConfirmedViews variant="cell" short confirmed={row?.confirmedViews} pending={row?.pendingViews} clippo={views} proof={row?.proof} />}
+                    </td>
                     <td data-l="">
                       <div className="cell-actions">
                         {c.status === "awaiting_funds" && <Link href={`/desk/${c.id}/fund?pool=${c.pool}`} className="btn sm">Fund {money(c.pool, 0)} USDC</Link>}
@@ -185,7 +194,8 @@ export function DeskView() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -222,6 +232,7 @@ export function DeskView() {
           </ul>
         )}
       </section>
+      {camps.status === "ready" && camps.data.some((c) => c.mode === "per_view") && <OnchainDisputes role="campaigner" />}
       {camps.status === "ready" && camps.data.filter((c) => c.mode === "human_split").map((c) => (
         <section key={c.id} className="section" aria-label={`Agent Pass activity for ${c.title}`}>
           <AgentPassPanel campaignId={c.id} title={`Agent Pass activity: ${c.title}`} refreshKey={panelKey} />

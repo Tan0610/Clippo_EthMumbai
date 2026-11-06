@@ -1,5 +1,5 @@
 /* Typed demo data for the marketplace views. Used only when the service is unreachable; the UI says so. */
-import type { Campaign } from "./data";
+import type { Campaign, ConfirmedFields } from "./data";
 
 export type TierName = "NEW" | "RISING" | "PRO" | "ELITE" | "VERIFIED" | "PARTNER" | "TOP";
 
@@ -17,7 +17,7 @@ export type StandingRow = {
 
 export type TrendRow = { position: number; campaign: Campaign; viewsGained: number; trendScore: number; windowDays: number; verified: boolean };
 
-export type DeskCampaign = {
+export type DeskCampaign = ConfirmedFields & {
   campaignId: string;
   title: string;
   status: string;
@@ -34,7 +34,7 @@ export type DeskCampaign = {
 };
 export type DeskData = {
   campaigns: DeskCampaign[];
-  totals: { campaigns: number; budget: number; spend: number; views: number; approved: number; rejected: number; pending: number; cpm1k: number | null };
+  totals: { campaigns: number; budget: number; spend: number; views: number; approved: number; rejected: number; pending: number; cpm1k: number | null; confirmedViews?: number; pendingViews?: number };
 };
 
 export type DailyPoint = { day: string; views: number };
@@ -43,8 +43,8 @@ export type CreatorPerf = { creator: string; verified: boolean; tier: TierName |
 export type CreatorDash = {
   verified: boolean;
   rank: { approved: number; rejected: number; pending: number; reliability: number; tier: TierName; rank: number };
-  totals: { views: number; submitted: number; approved: number; rejected: number; pending: number; hires: number; estimated: number; claimable: number; claimed: number };
-  campaigns: { campaignId: string; title: string; mode: string; approvedClips: number; views: number; est: number | null }[];
+  totals: { views: number; submitted: number; approved: number; rejected: number; pending: number; hires: number; estimated: number; claimable: number; claimed: number; confirmedViews?: number; pendingViews?: number };
+  campaigns: (ConfirmedFields & { campaignId: string; title: string; mode: string; approvedClips: number; views: number; est: number | null })[];
 };
 
 export type Fees = { campaignerBps: number; creatorBps: number; source: "api" | "default" };
@@ -68,7 +68,9 @@ export const mockDeskTotals = (campaigns: DeskCampaign[]): DeskData["totals"] =>
     (a, c) => ({ budget: a.budget + c.budget, spend: a.spend + c.spend, views: a.views + c.views, approved: a.approved + c.approved, rejected: a.rejected + c.rejected, pending: a.pending + c.pending }),
     { budget: 0, spend: 0, views: 0, approved: 0, rejected: 0, pending: 0 },
   );
-  return { campaigns: campaigns.length, ...t, cpm1k: t.views ? (t.spend / t.views) * 1000 : null };
+  const withCre = campaigns.filter((c) => c.confirmedViews !== undefined);
+  const cre = withCre.length ? { confirmedViews: withCre.reduce((a, c) => a + (c.confirmedViews ?? 0), 0), pendingViews: withCre.reduce((a, c) => a + (c.pendingViews ?? 0), 0) } : {};
+  return { campaigns: campaigns.length, ...t, ...cre, cpm1k: t.views ? (t.spend / t.views) * 1000 : null };
 };
 
 export const mockCreators: CreatorPerf[] = [

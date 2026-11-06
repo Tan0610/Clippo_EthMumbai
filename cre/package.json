@@ -4,9 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --experimental-strip-types --test workflows/clippo-settlement/snapshot.test.ts",
+    "test": "node --experimental-strip-types --test workflows/clippo-settlement/snapshot.test.ts workflows/clippo-settlement/youtube.test.ts",
     "typecheck": "tsc --noEmit -p workflows/clippo-settlement/tsconfig.json",
     "simulate": "cre workflow simulate ./workflows/clippo-settlement --target staging-settings --non-interactive --trigger-index 0",
+    "simulate:live": "cre workflow simulate ./workflows/clippo-settlement --target production-settings --non-interactive --trigger-index 0",
     "mock-backend": "node scripts/mock-backend.mjs",
     "emulate": "node --experimental-strip-types --no-warnings scripts/emulate-delivery.mts",
     "simulate:broadcast": "cre workflow simulate ./workflows/clippo-settlement --target staging-settings --non-interactive --trigger-index 0 --broadcast",

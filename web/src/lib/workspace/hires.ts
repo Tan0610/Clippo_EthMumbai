@@ -226,7 +226,7 @@ export async function isParticipant(userId: string, hireId: string) {
  * the hire's brief becomes the campaign story, eligibility = ANYONE_VERIFIED (submissions are restricted to
  * the approved creators by the submissions route). The preset amounts become the split (see presetSplit).
  */
-export async function fundAll(hire: Hire, opts: { onchainId?: string; txHash?: string }) {
+export async function fundAll(hire: Hire) {
   assertOpen(hire);
   if (!hire.briefId) throw new ApiError(409, "BRIEF_REQUIRED", "Attach a brief before funding");
   const brief = await db.hireBrief.findUnique({ where: { id: hire.briefId } });
@@ -248,9 +248,7 @@ export async function fundAll(hire: Hire, opts: { onchainId?: string; txHash?: s
         approver: "CAMPAIGNER_ONLY",
         poolSize: plan.poolSize,
         eligibility: "ANYONE_VERIFIED",
-        status: opts.onchainId ? "FUNDED" : "DRAFT",
-        onchainId: opts.onchainId,
-        fundTxHash: opts.txHash,
+        status: "DRAFT",
       },
     });
     const updated = await tx.hire.update({ where: { id: hire.id }, data: { status: "FUNDING", campaignId: campaign.id } });
@@ -265,9 +263,7 @@ export async function fundAll(hire: Hire, opts: { onchainId?: string; txHash?: s
       poolSize: plan.poolSize,
       payoutMode: "HUMAN_SPLIT",
       presetSplits: plan.splits,
-      next: opts.onchainId
-        ? "Funded. Admin approves the campaign, creators submit clips, then POST /api/campaigns/:id/split with presetSplits."
-        : "Escrow poolSize on-chain, then POST /api/campaigns/:id/fund {onchainId, txHash}.",
+      next: "Escrow poolSize on-chain, then POST /api/campaigns/:id/fund {txHash}.",
     },
   };
 }

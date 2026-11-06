@@ -37,7 +37,7 @@ async function seed() {
   const [admin, campaigner, creator] = await Promise.all([
     db.user.create({ data: { wallet: ADMIN, role: "ADMIN" } }),
     db.user.create({ data: { wallet: CAMPAIGNER, role: "CAMPAIGNER" } }),
-    db.user.create({ data: { wallet: CREATOR, role: "CREATOR", verified: true } }),
+    db.user.create({ data: { wallet: CREATOR, role: "CREATOR", verified: true, worldIdNullifier: "0xc0ffee" } }),
   ]);
   const channel = await db.channel.create({ data: { userId: creator.id, platform: "YOUTUBE", handle: "c", verificationCode: "x", verified: true } });
   return { admin, campaigner, creator, channel };
@@ -350,9 +350,9 @@ describe("anti-fraud: deleted clip", () => {
     await resolveFlag(flag.id, "DISMISS", admin.id);
     expect((await db.payout.findUniqueOrThrow({ where: { id: payout.id } })).frozen).toBe(false);
     expect((await db.submission.findUniqueOrThrow({ where: { id: sub.id } })).clipStatus).toBe("LIVE");
-    // unfrozen, but a claim is only recorded from a verified on-chain Claimed event: no txHash -> 400
+    // unfrozen, but a claim is only recorded from a verified on-chain Claimed event: the double's tx does not exist -> 404
     const noTx = await call(claim.POST, jsonReq(`/api/payouts/${payout.id}/claim`, CREATOR, {}), payout.id);
-    expect(noTx.status).toBe(400);
+    expect(noTx.status).toBe(404);
   });
 
   it("a confirmed deletion keeps the balance frozen", async () => {

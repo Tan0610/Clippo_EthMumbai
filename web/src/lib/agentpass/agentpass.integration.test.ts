@@ -108,7 +108,7 @@ beforeAll(async () => {
     db.user.create({ data: { wallet: CAMPAIGNER, role: "CAMPAIGNER", verified: true } }),
     db.user.create({ data: { wallet: OTHER, role: "CAMPAIGNER" } }),
   ]);
-  const creator = await db.user.create({ data: { wallet: CREATOR, role: "CREATOR", verified: true } });
+  const creator = await db.user.create({ data: { wallet: CREATOR, role: "CREATOR", verified: true, worldIdNullifier: "0xc0ffee" } });
   await db.channel.create({ data: { userId: creator.id, platform: "YOUTUBE", handle: "c", verificationCode: "x", verified: true } });
 }, 120_000);
 

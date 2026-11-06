@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { actions, ApiError, asApiError, DEMO, errText, wireProof, NOT_CONFIGURED, session, type ApiUser, type SplitProposal, type WorldProof } from "./api";
-import { approveCampaignOnchain, approveSplit, claimPayout, closeCampaignOnchain, fundCampaign, rejectCampaignOnchain } from "@/lib/chain/client";
+import { approveCampaignOnchain, approveSplit, claimPayout, closeCampaignOnchain, fundCampaign, rejectCampaignOnchain, type HumanProof } from "@/lib/chain/client";
 import { escrowReady, hasWallet, loadChain, onAccountsChanged, type ChainInfo } from "./wallet";
 import { detectWallets, getActiveWallet, setActiveWallet, type DetectedWallet } from "@/lib/chain/wallets";
 
@@ -211,11 +211,11 @@ export const escrow = {
     return wrap(claimPayout(payoutId));
   },
   /** Admin: on-chain approveCampaign (with the World ID attestation for high-value pools), then API verification. */
-  async approve(c: { id: string; onchainId?: string | null }, attestation?: `0x${string}`) {
+  async approve(c: { id: string; onchainId?: string | null }, proof?: HumanProof) {
     const info = await loadChain();
     if (!escrowReady(info)) return actions.approveCampaign(c.id);
     if (!c.onchainId) throw new ApiError(409, "CHAIN_STATE_MISMATCH", "This campaign has no on-chain id yet, so it cannot be approved on-chain.");
-    return wrap(approveCampaignOnchain(c.id, c.onchainId, attestation));
+    return wrap(approveCampaignOnchain(c.id, c.onchainId, proof));
   },
   /** Admin: on-chain rejectCampaign (full refund incl. fee), then API verification. */
   async reject(c: { id: string; onchainId?: string | null }, reason: string) {

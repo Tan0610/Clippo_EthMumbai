@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
+import { clippoWallet, humanHash, KIND_SPLIT } from "@/lib/chain/clippo-wallet";
 import { attestationHash, normalizeSplit, onchainSplitArgs, splitHash } from "@/lib/chain/split";
 import { db } from "@/lib/db";
 import { canManageCampaign, getCampaign, proofSchema, type Ctx } from "@/lib/domain";
@@ -32,7 +33,8 @@ const SPLIT_ACTION = "clippo-approve-split";
  *  - Cancelled / expired / invalid proof -> 403 WORLD_ID_DENIED; reused proof -> 409 PROOF_REUSED. Nothing is stored and the
  *    proof is not consumed, so the action is simply undone.
  *  - With a configured chain, finalisation is confirmed by the on-chain `SplitFinalized` event (status AWAITING_CHAIN
- *    until then); each approver must call `approveSplit(id, creators, amounts, attestation)` with the returned values.
+ *    until then); each approver must call `approveSplit(id, creators, amounts, proof)` with the returned values. The contract
+ *    itself checks `proof`, so this World ID check cannot be skipped by calling the contract directly.
  */
 export const POST = route(async (req: Request, ctx: Ctx) => {
   const info: AuditCtx = {};
@@ -92,6 +94,13 @@ async function approve(req: Request, { params }: Ctx, info: AuditCtx): Promise<R
   } else {
     ({ proofHash, nullifier } = await checkFreshProof(v.worldIdProof!, SPLIT_ACTION, `split:${c.id}:${hash}`));
   }
+  // The escrow only credits wallets linked to a human, and only with a signed approval: link the recipients first (network call, before the transaction).
+  const wallet = clippoWallet();
+  const recipients = await db.user.findMany({ where: { wallet: { in: split.map((s) => s.creatorWallet) } }, select: { wallet: true, worldIdNullifier: true } });
+  // The escrow credits only humans: every recipient must have passed the World ID check (enforced here, at the real approval, not in the shared pre-check).
+  for (const r of recipients) if (!r.worldIdNullifier) throw new ApiError(400, "BAD_RECIPIENT", `${r.wallet} has not verified with World ID`);
+  for (const r of recipients) await wallet.ensureHuman(r.wallet, r.worldIdNullifier!);
+  let chainProof: Awaited<ReturnType<typeof wallet.signApproval>> | null = null;
   let attestation = v.stepUpAttemptId ? "" : attestationHash({ kind: "SPLIT", campaignKey: c.onchainId ?? c.id, wallet: user.wallet, nullifier, proofHash, splitHash: hash });
 
   const result = await db.$transaction(async (tx) => {
@@ -103,6 +112,8 @@ async function approve(req: Request, { params }: Ctx, info: AuditCtx): Promise<R
       await consumeProof(tx, user, proofHash, SPLIT_ACTION);
     }
     await tx.humanAttestation.create({ data: { campaignId: c.id, userId: user.id, kind: "SPLIT", splitHash: hash, attestation, proofHash } });
+    // The approval the escrow checks: signed by the backend wallet, bound to this exact split and this approver (local signature, no network).
+    chainProof = c.onchainId ? await wallet.signApproval({ campaignId: BigInt(c.onchainId), kind: KIND_SPLIT, subject: hash as `0x${string}`, approver: user.wallet, human: humanHash(nullifier) }) : null;
 
     let proposal = await tx.splitProposal.findFirst({ where: { campaignId: c.id, status: { in: ["PENDING", "AWAITING_CHAIN"] } }, orderBy: { createdAt: "desc" } });
     if (proposal && proposal.splitHash !== hash) {
@@ -163,8 +174,8 @@ async function approve(req: Request, { params }: Ctx, info: AuditCtx): Promise<R
       },
       attestation,
       gate,
-      onchain: c.onchainId
-        ? { functionName: "approveSplit", args: { id: c.onchainId, ...onchainSplitArgs(split), attestation } }
+      onchain: c.onchainId && chainProof
+        ? { functionName: "approveSplit", args: { id: c.onchainId, ...onchainSplitArgs(split), proof: chainProof } }
         : null,
     },
     201,

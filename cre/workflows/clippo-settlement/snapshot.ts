@@ -1,4 +1,4 @@
-import { encodeAbiParameters, getAddress, isAddress, type Hex } from "viem";
+import { decodeAbiParameters, encodeAbiParameters, getAddress, isAddress, keccak256, stringToHex, type Hex } from "viem";
 
 export type SnapshotRow = {
   campaignId: string; // decimal string (uint256)
@@ -101,5 +101,49 @@ export function chunkRows<T>(rows: T[], size: number): T[][] {
   if (!Number.isInteger(size) || size < 1) throw new Error("chunk size must be a positive integer");
   const out: T[][] = [];
   for (let i = 0; i < rows.length; i += size) out.push(rows.slice(i, i + size));
+  return out;
+}
+
+const ZERO_ADDRESS = /^0x0{40}$/;
+
+/** Refuse to sign a report for an unconfigured receiver. Callers run this only when there is something to deliver. */
+export function assertReceiverConfigured(receiver: string): void {
+  if (ZERO_ADDRESS.test(receiver)) {
+    throw new Error("evm.receiverAddress is the zero address: deploy ClippoReportReceiver and set it in the workflow config before delivering reports");
+  }
+}
+
+const topic = (signature: string): Hex => keccak256(stringToHex(signature));
+const REPORT_PROCESSED = topic("ReportProcessed(uint256,uint256)");
+const ITEM_FAILED = topic("ItemFailed(uint256,address,bytes)");
+const KNOWN_ERRORS = new Map(
+  ["NotHuman()", "BadMode()", "DeadlinePassed()", "NotAdapter()", "BadParams()", "BadState(uint8)"].map(
+    (e) => [topic(e).slice(0, 10), e] as const,
+  ),
+);
+
+export type ReceiptLog = { address: Hex; topics: Hex[]; data: Hex };
+export type FailedItem = { campaignId: string; creator: string; reason: string };
+/** `items` and `failed` are null when the receipt has no ReportProcessed event from the receiver. */
+export type ReportOutcome = { items: number | null; failed: number | null; failures: FailedItem[] };
+
+/** Read ClippoReportReceiver's events from a delivery receipt. The receiver swallows per-row reverts, so this is the only place they show. */
+export function summarizeReceiverLogs(logs: ReceiptLog[], receiver: string): ReportOutcome {
+  const out: ReportOutcome = { items: null, failed: null, failures: [] };
+  for (const log of logs) {
+    if (log.address.toLowerCase() !== receiver.toLowerCase()) continue;
+    if (log.topics[0] === REPORT_PROCESSED) {
+      const [items, failed] = decodeAbiParameters([{ type: "uint256" }, { type: "uint256" }], log.data);
+      out.items = Number(items);
+      out.failed = Number(failed);
+    } else if (log.topics[0] === ITEM_FAILED) {
+      const [reason] = decodeAbiParameters([{ type: "bytes" }], log.data);
+      out.failures.push({
+        campaignId: BigInt(log.topics[1]).toString(),
+        creator: getAddress(`0x${log.topics[2].slice(-40)}`),
+        reason: KNOWN_ERRORS.get(reason.slice(0, 10)) ?? reason,
+      });
+    }
+  }
   return out;
 }

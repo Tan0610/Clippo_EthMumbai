@@ -2,7 +2,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useSession } from "./hooks";
-import { errText, extActions, type LinkPlatform, type WorldProof } from "./api";
+import { useAsync } from "./hooks";
+import { actions, errText, extActions, type ChannelRec, type LinkPlatform, type WorldProof } from "./api";
 import { PageHead } from "./Bits";
 import { Arrow, Check, VerifiedMark } from "./Icons";
 import { WorldCheck, worldFailText, type WorldResult } from "./WorldCheck";
@@ -36,6 +37,112 @@ export function CredentialUnavailable() {
 
 type Ch = { id: string; handle: string; verificationCode: string };
 
+const asPlatform = (p: string): Exclude<LinkPlatform, "other"> => {
+  const l = p.toLowerCase();
+  return l === "x" || l === "instagram" ? l : "youtube";
+};
+
+/** The channel code (`clippo:<wallet>`), with a copy button and where to paste it. */
+export function ChannelCode({ code, platform }: { code: string; platform: Exclude<LinkPlatform, "other"> }) {
+  const [copy, setCopy] = useState<"idle" | "done" | "failed">("idle");
+  async function doCopy() {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopy("done");
+    } catch {
+      setCopy("failed");
+    }
+    setTimeout(() => setCopy("idle"), 2500);
+  }
+  return (
+    <div className="stack" style={{ gap: 10 }}>
+      <span className="micro">Paste this in your {platform === "youtube" ? "YouTube channel description (About)" : "profile bio"}</span>
+      <div className="row" style={{ gap: 12, alignItems: "stretch" }}>
+        <div className="fig" data-testid="channel-code" style={{ fontSize: "clamp(0.95rem, 3.4vw, 1.5rem)", border: "2px dashed var(--ink)", padding: "12px 16px", background: "var(--paper-2)", width: "fit-content", maxWidth: "100%", overflowWrap: "anywhere", letterSpacing: "0.02em", userSelect: "all" }}>{code}</div>
+        <button type="button" className="btn ghost sm" onClick={doCopy} aria-live="polite">{copy === "done" ? "Copied" : copy === "failed" ? "Select and copy" : "Copy"}</button>
+      </div>
+      <p className="muted">
+        {platform === "youtube"
+          ? "Keep it there. Chainlink nodes check your bio each time views are confirmed."
+          : "Leave it up until a reviewer confirms it. After that you can remove it."}
+      </p>
+    </div>
+  );
+}
+
+/** A channel on the old code format (or not yet proven): get the new code, paste it, check. */
+export function ChannelReverify({ channel, onDone }: { channel: ChannelRec; onDone?: () => void }) {
+  const platform = asPlatform(channel.platform);
+  const [code, setCode] = useState<string | null>(channel.needsReverify ? null : (channel.verificationCode ?? null));
+  const [state, setState] = useState<"idle" | "upgrading" | "checking" | "missing" | "found" | "review">("idle");
+  const [tries, setTries] = useState(0);
+  const [err, setErr] = useState("");
+
+  async function upgrade() {
+    setState("upgrading");
+    setErr("");
+    try {
+      const r = await extActions.channelUpgrade(channel.id, channel.handle);
+      setCode(r.verificationCode);
+      setState("idle");
+    } catch (e) {
+      setErr(errText(e));
+      setState("idle");
+    }
+  }
+  async function check() {
+    setState("checking");
+    setErr("");
+    try {
+      const r = await extActions.channelVerify(channel.id, platform, tries);
+      if (r.review) return setState("review");
+      setState("found");
+      onDone?.();
+    } catch (e) {
+      setTries((n) => n + 1);
+      setState("missing");
+      setErr(errText(e));
+    }
+  }
+
+  return (
+    <div className="stack rise" style={{ gap: 12, padding: "12px 0" }}>
+      {code === null && (
+        <>
+          <p className="notice warn" role="status"><b>Re-verify {channel.handle}.</b>This channel uses the old code. Get your new code, paste it in your bio, then check. Until then its views cannot be confirmed.</p>
+          <button className="btn sm" style={{ justifySelf: "start" }} onClick={upgrade} disabled={state === "upgrading"}>{state === "upgrading" ? "Issuing a code" : "Get my new code"}</button>
+        </>
+      )}
+      {code !== null && (
+        <>
+          <ChannelCode code={code} platform={platform} />
+          <div className="row" style={{ gap: 20 }}>
+            <button className="btn sm" onClick={check} disabled={state === "checking" || state === "found" || state === "review"}>{state === "checking" ? "Reading your profile" : state === "review" ? "Waiting for review" : "I put it there. Check."}</button>
+            {state === "found" && <span className="row" role="status"><Check size={18} /> <b>Channel proven.</b></span>}
+          </div>
+          {state === "review" && <p className="notice warn" role="status"><b>Sent to a person.</b>A reviewer will look for the code, usually within a day. Leave it in your bio until then.</p>}
+          {state === "missing" && <p className="notice warn" role="alert"><b>Code not found yet.</b>{err} Platforms can take a minute to show the change. Check the spelling and try again.</p>}
+        </>
+      )}
+      {err && state === "idle" && <p className="notice warn" role="alert"><b>Could not continue.</b>{err}</p>}
+    </div>
+  );
+}
+
+/** Channels still on the old code. Renders nothing when there are none, or when the list cannot be read. */
+function OldChannels() {
+  const q = useAsync(actions.channels);
+  const [done, setDone] = useState<string[]>([]);
+  if (q.status !== "ready") return null;
+  const old = q.data.filter((c) => c.needsReverify && !done.includes(c.id));
+  if (old.length === 0) return null;
+  return (
+    <div className="stack" style={{ gap: 4 }}>
+      <span className="micro">Channels to re-verify</span>
+      {old.map((c) => <ChannelReverify key={c.id} channel={c} onDone={() => setDone((d) => [...d, c.id])} />)}
+    </div>
+  );
+}
 export function ChannelProof({ onDone }: { onDone?: (handle: string) => void }) {
   const s = useSession();
   const [handle, setHandle] = useState("");
@@ -102,9 +209,7 @@ export function ChannelProof({ onDone }: { onDone?: (handle: string) => void }) 
       {err && state !== "missing" && <p className="notice warn" role="alert"><b>Could not continue.</b>{err}</p>}
       {ch && (
         <div className="stack rise">
-          <span className="micro">Put this code in your {platform === "youtube" ? "channel description" : "profile bio"}</span>
-          <div className="fig" style={{ fontSize: "clamp(1.2rem, 4vw, 2rem)", border: "2px dashed var(--ink)", padding: "14px 18px", background: "var(--paper-2)", width: "fit-content", maxWidth: "100%", overflowWrap: "anywhere", letterSpacing: "0.04em" }}>{ch.verificationCode}</div>
-          <p className="muted">Leave it up until Clippo reads it. After that you can remove it.</p>
+          <ChannelCode code={ch.verificationCode} platform={platform} />
           <div className="row" style={{ gap: 20 }}>
             <button className="btn" onClick={check} disabled={state === "checking" || state === "found" || state === "review"}>{state === "checking" ? "Reading your profile" : state === "review" ? "Waiting for review" : "I put it there. Check."}</button>
             {state === "found" && <span className="row" role="status"><Check size={18} /> <b>Channel proven.</b></span>}
@@ -187,6 +292,7 @@ export function JoinView() {
           <li className="stack" style={{ opacity: s.verified ? 1 : 0.4 }} inert={!s.verified}>
             <span className="micro">Step 2 · Prove a channel</span>
             <h2 className="display h3">Show it&rsquo;s yours.</h2>
+            {s.verified && <OldChannels />}
             <ChannelProof onDone={() => setChannel(true)} />
           </li>
           {channel && (

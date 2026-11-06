@@ -1,8 +1,9 @@
 import { getPlatformFees } from "./chain/fees";
+import { confirmedByPair, NO_CONFIRMED, pairKey, sumConfirmed, withPending, type ConfirmedFields } from "./confirmed";
 import { db } from "./db";
 import { latestPerSubmission } from "./snapshots";
 
-export interface CampaignEarning {
+export interface CampaignEarning extends ConfirmedFields {
   campaignId: string;
   title: string;
   payoutMode: string;
@@ -19,6 +20,7 @@ export interface CampaignEarning {
 export async function creatorEarnings(userId: string) {
   const fees = await getPlatformFees();
   const snaps = await latestPerSubmission();
+  const confirmed = await confirmedByPair({ creatorId: userId });
   const viewsBySub = new Map(snaps.map((s) => [s.submissionId, s.cumulativeViews]));
 
   const mine = await db.submission.findMany({
@@ -61,6 +63,8 @@ export async function creatorEarnings(userId: string) {
       payoutMode: c.payoutMode,
       approvedClips: myClips.length,
       views: myViews,
+      // CRE-confirmed views (on-chain ViewsReported) vs Clippo's own count; HUMAN_SPLIT has no CRE views, so nothing is pending there
+      ...withPending(confirmed.get(pairKey(c.id, userId)) ?? NO_CONFIRMED, c.payoutMode === "HUMAN_SPLIT" ? 0 : myViews),
       estimatedEarnings: estimated === null ? null : Math.round(estimated * 100) / 100,
       estimatedNet: estimated === null ? null : Math.round(estimated * (1 - creatorFeeBps / 10_000) * 100) / 100,
       creatorFeeBps,
@@ -74,6 +78,8 @@ export async function creatorEarnings(userId: string) {
     campaigns: campaignsOut,
     payouts,
     totals: {
+      confirmedViews: sumConfirmed(campaignsOut).confirmedViews,
+      pendingViews: campaignsOut.reduce((n, c) => n + c.pendingViews, 0),
       estimated: campaignsOut.reduce((n, c) => n + (c.estimatedEarnings ?? 0), 0),
       estimatedNet: campaignsOut.reduce((n, c) => n + (c.estimatedNet ?? 0), 0),
       /** gross, unfrozen, not yet claimed (PER_VIEW credits may still be inside the retention window: see payout.releaseAt) */

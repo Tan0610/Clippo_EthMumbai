@@ -1,0 +1,16 @@
+/* Confirmed vs pending views (Chainlink CRE). Tokens only, so Paper and Night both work. */
+.cv { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; min-width: 0; max-width: 100%; }
+.cv-cell { justify-items: end; text-align: right; }
+.cv-cell > * { max-width: 100%; }
+.cv-cell .cv-main { font-variant-numeric: tabular-nums; }
+.cv-sub { color: var(--ink-2); overflow-wrap: anywhere; }
+.cv-badge { display: inline-flex; align-items: center; gap: 4px; color: var(--ok); border-color: var(--ok); max-width: 100%; }
+.cv-line { gap: 6px; }
+.cv-line .cv-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; min-width: 0; }
+.cv-line .cv-num { font-size: 1.4rem; font-weight: 500; letter-spacing: -0.04em; line-height: 1.1; }
+.cv-proof { overflow-wrap: anywhere; word-break: break-word; }
+.cv-proof a { white-space: normal; text-decoration: underline; text-underline-offset: 3px; }
+.cv-stat dd { margin: 0; }
+.cv-stat dd.note { font-size: 0.8rem; }
+.cv-explain { margin: 0; }
+.cv-plain { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; justify-items: end; }

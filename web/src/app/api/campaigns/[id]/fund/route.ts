@@ -36,7 +36,7 @@ export const GET = route(async (req: Request, { params }: Ctx) => {
       mode: MODE_INDEX[c.payoutMode],
       ratePer1kViews: toUnits(c.ratePer1k ?? 0).toString(),
       poolAmount: toUnits(c.poolSize).toString(),
-      deadline: Math.floor(Date.now() / 1000) + DEFAULT_DEADLINE_DAYS * 86400,
+      deadline: Math.floor(Date.now() / 1000) + Number(process.env.CAMPAIGN_DEADLINE_SECONDS || DEFAULT_DEADLINE_DAYS * 86400),
       requireAdminApproval: c.approver === "CAMPAIGNER_AND_ADMIN",
       metadataURI: metadataUriFor(c.id),
     },
