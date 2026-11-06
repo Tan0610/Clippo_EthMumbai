@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Test} from "forge-std/Test.sol";
+import {HumanHelper} from "./HumanHelper.sol";
 import {ClippoEscrow} from "../src/ClippoEscrow.sol";
 import {ClippoReportReceiver} from "../src/ClippoReportReceiver.sol";
 import {MockUSDC} from "../src/MockUSDC.sol";
 
-contract ClippoEscrowTest is Test {
+contract ClippoEscrowTest is HumanHelper {
     ClippoEscrow escrow;
     ClippoReportReceiver receiver;
     MockUSDC usdc;
@@ -27,21 +27,30 @@ contract ClippoEscrowTest is Test {
 
     function setUp() public {
         usdc = new MockUSDC();
-        escrow = new ClippoEscrow(address(usdc), treasury, owner);
+        escrow = new ClippoEscrow(address(usdc), treasury, owner, attestor);
         receiver = new ClippoReportReceiver(address(escrow), forwarder, owner, address(0), true); // escrow-logic tests skip workflow metadata; see ClippoReportReceiver.t.sol
         vm.startPrank(owner);
         escrow.setAdmin(admin, true);
         escrow.setReportAdapter(address(receiver));
         escrow.setHighValueThreshold(type(uint256).max); // legacy tests use $10k pools; high-value tests re-enable
         escrow.setRetentionPeriod(0); // legacy tests assume instant release; retention tests set their own window
+        escrow.setGracePeriod(0); // legacy tests close right after the deadline; grace tests set their own window
         vm.stopPrank();
         deadline = uint64(block.timestamp + 30 days);
         usdc.mint(campaigner, 1_000_000e6);
         vm.prank(campaigner);
         usdc.approve(address(escrow), type(uint256).max);
+        _register(escrow, alice);
+        _register(escrow, bob);
     }
 
     // ---------------------------------------------------------- helpers
+    function _approveSplit(address approver, uint256 id, address[] memory cs, uint256[] memory amts) internal {
+        ClippoEscrow.HumanProof memory p = _splitProof(escrow, id, cs, amts, approver);
+        vm.prank(approver);
+        escrow.approveSplit(id, cs, amts, p);
+    }
+
     function _create(ClippoEscrow.Mode mode, uint256 rate, bool second) internal returns (uint256 id) {
         vm.prank(campaigner);
         id = escrow.createCampaign(mode, rate, POOL, deadline, second, "ipfs://meta");
@@ -266,7 +275,7 @@ contract ClippoEscrowTest is Test {
     }
 
     function test_perView_wrongModeReverts() public {
-        uint256 id = _createApproved(ClippoEscrow.Mode.PoolShare, 0, false);
+        uint256 id = _createApproved(ClippoEscrow.Mode.HumanSplit, 0, false);
         vm.prank(address(receiver));
         vm.expectRevert(ClippoEscrow.BadMode.selector);
         escrow.reportViews(id, alice, 100);
@@ -381,12 +390,22 @@ contract ClippoEscrowTest is Test {
         escrow.closeCampaign(id);
     }
 
-    function test_close_adminCanCloseEarly_strangerCannot() public {
+    function test_close_nobodyEarly_anyoneAfterGrace() public {
+        vm.prank(owner);
+        escrow.setGracePeriod(1 days);
         uint256 id = _createApproved(ClippoEscrow.Mode.PerView, 5e6, false);
-        vm.prank(eve);
-        vm.expectRevert(ClippoEscrow.NotCampaigner.selector);
-        escrow.closeCampaign(id);
         vm.prank(admin);
+        vm.expectRevert(ClippoEscrow.DeadlineNotReached.selector);
+        escrow.closeCampaign(id);
+        vm.warp(deadline + 1);
+        vm.prank(campaigner);
+        vm.expectRevert(ClippoEscrow.DeadlineNotReached.selector);
+        escrow.closeCampaign(id);
+        // final reports still land in the grace window
+        _report(id, alice, 1000);
+        assertEq(escrow.credited(id, alice), 5e6);
+        vm.warp(deadline + 1 days + 1);
+        vm.prank(alice); // a creator can force the close
         escrow.closeCampaign(id);
         assertEq(uint8(escrow.getCampaign(id).state), uint8(ClippoEscrow.State.Closed));
     }
@@ -400,7 +419,7 @@ contract ClippoEscrowTest is Test {
 
     function test_reportAfterClose_reverts() public {
         uint256 id = _createApproved(ClippoEscrow.Mode.PerView, 5e6, false);
-        vm.prank(admin);
+        vm.warp(deadline + 1);
         escrow.closeCampaign(id);
         vm.prank(address(receiver));
         vm.expectRevert(abi.encodeWithSelector(ClippoEscrow.BadState.selector, ClippoEscrow.State.Closed));
@@ -410,15 +429,13 @@ contract ClippoEscrowTest is Test {
     // ------------------------------------------------- HumanSplit
     function test_humanSplit_campaignerAlone() public {
         uint256 id = _createApproved(ClippoEscrow.Mode.HumanSplit, 0, false);
-        vm.prank(campaigner);
-        escrow.approveSplit(id, _arr2(alice, bob), _u2(3000e6, 2000e6));
+        _approveSplit(campaigner, id, _arr2(alice, bob), _u2(3000e6, 2000e6));
         assertEq(escrow.claimable(id, alice), 3000e6);
         assertEq(escrow.claimable(id, bob), 2000e6);
         assertEq(escrow.remainingPool(id), NET - 5000e6);
 
         // a second round within the remaining pool
-        vm.prank(admin);
-        escrow.approveSplit(id, _arr(alice), _u(1000e6));
+        _approveSplit(campaigner, id, _arr(alice), _u(1000e6));
         assertEq(escrow.claimable(id, alice), 4000e6);
 
         vm.prank(alice);
@@ -435,16 +452,13 @@ contract ClippoEscrowTest is Test {
 
     function test_humanSplit_sumExceedsPool() public {
         uint256 id = _createApproved(ClippoEscrow.Mode.HumanSplit, 0, false);
-        vm.prank(campaigner);
         vm.expectRevert(ClippoEscrow.PoolExceeded.selector);
-        escrow.approveSplit(id, _arr2(alice, bob), _u2(NET, 1));
+        _approveSplit(campaigner, id, _arr2(alice, bob), _u2(NET, 1));
         // exactly the pool is fine
-        vm.prank(campaigner);
-        escrow.approveSplit(id, _arr2(alice, bob), _u2(NET - 1, 1));
+        _approveSplit(campaigner, id, _arr2(alice, bob), _u2(NET - 1, 1));
         assertEq(escrow.remainingPool(id), 0);
-        vm.prank(campaigner);
         vm.expectRevert(ClippoEscrow.PoolExceeded.selector);
-        escrow.approveSplit(id, _arr(alice), _u(1));
+        _approveSplit(campaigner, id, _arr(alice), _u(1));
     }
 
     function test_humanSplit_secondApproverRequired() public {
@@ -452,61 +466,54 @@ contract ClippoEscrowTest is Test {
         address[] memory cs = _arr2(alice, bob);
         uint256[] memory amts = _u2(100e6, 200e6);
 
-        vm.prank(campaigner);
-        escrow.approveSplit(id, cs, amts);
+        _approveSplit(campaigner, id, cs, amts);
         assertEq(escrow.claimable(id, alice), 0); // pending
         assertEq(escrow.remainingPool(id), NET);
 
         // different split from admin resets approvals
-        vm.prank(admin);
-        escrow.approveSplit(id, cs, _u2(100e6, 300e6));
+        _approveSplit(admin, id, cs, _u2(100e6, 300e6));
         assertEq(escrow.claimable(id, alice), 0);
 
         // campaigner now matches the admin's version -> finalized
-        vm.prank(campaigner);
-        escrow.approveSplit(id, cs, _u2(100e6, 300e6));
+        _approveSplit(campaigner, id, cs, _u2(100e6, 300e6));
         assertEq(escrow.claimable(id, alice), 100e6);
         assertEq(escrow.claimable(id, bob), 300e6);
-        (bytes32 h,,) = escrow.pendingSplit(id);
+        (bytes32 h,,,,) = escrow.pendingSplit(id);
         assertEq(h, bytes32(0));
     }
 
     function test_humanSplit_sameApproverTwiceDoesNotFinalize() public {
         uint256 id = _createApproved(ClippoEscrow.Mode.HumanSplit, 0, true);
-        vm.startPrank(campaigner);
-        escrow.approveSplit(id, _arr(alice), _u(100e6));
-        escrow.approveSplit(id, _arr(alice), _u(100e6));
-        vm.stopPrank();
+        _approveSplit(campaigner, id, _arr(alice), _u(100e6));
+        _approveSplit(campaigner, id, _arr(alice), _u(100e6));
         assertEq(escrow.claimable(id, alice), 0);
     }
 
     function test_humanSplit_accessAndStateChecks() public {
         uint256 id = _createApproved(ClippoEscrow.Mode.HumanSplit, 0, false);
-        vm.prank(eve);
         vm.expectRevert(ClippoEscrow.NotApprover.selector);
-        escrow.approveSplit(id, _arr(alice), _u(1));
+        _approveSplit(eve, id, _arr(alice), _u(1));
 
+        ClippoEscrow.HumanProof memory none;
         vm.prank(campaigner);
         vm.expectRevert(ClippoEscrow.BadParams.selector);
-        escrow.approveSplit(id, _arr(alice), _u2(1, 2)); // length mismatch
+        escrow.approveSplit(id, _arr(alice), _u2(1, 2), none); // length mismatch
 
         uint256 pv = _createApproved(ClippoEscrow.Mode.PerView, 1e6, false);
-        vm.prank(campaigner);
         vm.expectRevert(ClippoEscrow.BadMode.selector);
-        escrow.approveSplit(pv, _arr(alice), _u(1));
+        _approveSplit(campaigner, pv, _arr(alice), _u(1));
 
         uint256 funded = _create(ClippoEscrow.Mode.HumanSplit, 0, false);
-        vm.prank(campaigner);
         vm.expectRevert(abi.encodeWithSelector(ClippoEscrow.BadState.selector, ClippoEscrow.State.Funded));
-        escrow.approveSplit(funded, _arr(alice), _u(1));
+        _approveSplit(campaigner, funded, _arr(alice), _u(1));
     }
 
     // -------------------------------------------------- PoolShare
     function test_poolShare_proportionalAtClose() public {
         uint256 id = _createApproved(ClippoEscrow.Mode.PoolShare, 0, false);
-        vm.prank(campaigner);
-        escrow.setWeights(id, _arr2(alice, bob), _u2(3, 1));
-        assertEq(escrow.totalWeight(id), 4);
+        _report(id, alice, 3000);
+        _report(id, bob, 1000);
+        assertEq(escrow.totalWeight(id), 4000);
 
         // nothing claimable before close
         assertEq(escrow.claimable(id, alice), 0);
@@ -514,9 +521,9 @@ contract ClippoEscrowTest is Test {
         vm.expectRevert(ClippoEscrow.NothingToClaim.selector);
         escrow.claim(id);
 
-        // admin may re-set weights (replaces)
-        vm.prank(admin);
-        escrow.setWeights(id, _arr2(alice, bob), _u2(1, 1));
+        // later reports raise the weight by the new views only
+        _report(id, bob, 3000);
+        assertEq(escrow.totalWeight(id), 6000);
 
         vm.warp(deadline + 1);
         uint256 before_ = usdc.balanceOf(campaigner);
@@ -538,42 +545,34 @@ contract ClippoEscrowTest is Test {
     function test_poolShare_noWeightsRefundsAll() public {
         uint256 id = _createApproved(ClippoEscrow.Mode.PoolShare, 0, false);
         uint256 before_ = usdc.balanceOf(campaigner);
-        vm.prank(admin);
+        vm.warp(deadline + 1);
         escrow.closeCampaign(id);
         assertEq(usdc.balanceOf(campaigner) - before_, NET);
     }
 
     function test_poolShare_unevenWeights() public {
         uint256 id = _createApproved(ClippoEscrow.Mode.PoolShare, 0, false);
-        vm.prank(campaigner);
-        escrow.setWeights(id, _arr2(alice, bob), _u2(70, 30));
-        vm.prank(admin);
+        _report(id, alice, 70);
+        _report(id, bob, 30);
+        vm.warp(deadline + 1);
         escrow.closeCampaign(id);
         assertEq(escrow.claimable(id, alice), (NET * 70) / 100);
         assertEq(escrow.claimable(id, bob), (NET * 30) / 100);
     }
 
-    function test_poolShare_setWeightsChecks() public {
+    function test_poolShare_onlyCreCanSetWeights() public {
         uint256 id = _createApproved(ClippoEscrow.Mode.PoolShare, 0, false);
-        vm.prank(eve);
-        vm.expectRevert(ClippoEscrow.NotApprover.selector);
-        escrow.setWeights(id, _arr(alice), _u(1));
-        vm.startPrank(campaigner);
-        vm.expectRevert(ClippoEscrow.BadParams.selector);
-        escrow.setWeights(id, _arr(alice), _u(0)); // zero weight
-        vm.expectRevert(ClippoEscrow.BadParams.selector);
-        escrow.setWeights(id, _arr2(alice, alice), _u2(1, 1)); // duplicate
-        vm.stopPrank();
-
-        uint256 hs = _createApproved(ClippoEscrow.Mode.HumanSplit, 0, false);
+        vm.prank(admin);
+        vm.expectRevert(ClippoEscrow.NotAdapter.selector);
+        escrow.reportViews(id, eve, 1000);
         vm.prank(campaigner);
-        vm.expectRevert(ClippoEscrow.BadMode.selector);
-        escrow.setWeights(hs, _arr(alice), _u(1));
+        vm.expectRevert(ClippoEscrow.NotAdapter.selector);
+        escrow.reportViews(id, eve, 1000);
     }
 
     // ------------------------------------------- retention window
     function test_retention_defaultIs7Days() public {
-        ClippoEscrow fresh = new ClippoEscrow(address(usdc), treasury, owner);
+        ClippoEscrow fresh = new ClippoEscrow(address(usdc), treasury, owner, attestor);
         assertEq(fresh.retentionPeriod(), 7 days);
     }
 
@@ -631,8 +630,9 @@ contract ClippoEscrowTest is Test {
         vm.prank(owner);
         escrow.setRetentionPeriod(7 days);
         uint256 id = _createApproved(ClippoEscrow.Mode.PerView, 5e6, false);
+        vm.warp(deadline - 1);
         _report(id, alice, 10_000);
-        vm.prank(admin);
+        vm.warp(deadline + 1);
         escrow.closeCampaign(id);
         assertEq(escrow.claimable(id, alice), 0);
         vm.warp(block.timestamp + 7 days);
@@ -654,14 +654,13 @@ contract ClippoEscrowTest is Test {
         vm.prank(owner);
         escrow.setRetentionPeriod(7 days);
         uint256 id = _createApproved(ClippoEscrow.Mode.HumanSplit, 0, false);
-        vm.prank(campaigner);
-        escrow.approveSplit(id, _arr(alice), _u(100e6));
+        _approveSplit(campaigner, id, _arr(alice), _u(100e6));
         assertEq(escrow.claimable(id, alice), 100e6);
     }
 
     // ------------------------------------------------ high value
     function test_highValue_defaultThreshold() public {
-        ClippoEscrow fresh = new ClippoEscrow(address(usdc), treasury, owner);
+        ClippoEscrow fresh = new ClippoEscrow(address(usdc), treasury, owner, attestor);
         assertEq(fresh.highValueThreshold(), 1_000e6);
     }
 
@@ -685,16 +684,17 @@ contract ClippoEscrowTest is Test {
         vm.prank(admin);
         vm.expectRevert(ClippoEscrow.AttestationRequired.selector);
         escrow.approveCampaign(id);
+        ClippoEscrow.HumanProof memory none;
         vm.prank(admin);
         vm.expectRevert(ClippoEscrow.AttestationRequired.selector);
-        escrow.approveCampaign(id, bytes32(0));
+        escrow.approveCampaign(id, none);
 
-        bytes32 att = keccak256("world-id-proof-admin");
+        ClippoEscrow.HumanProof memory p = _campaignProof(escrow, id, admin);
         vm.expectEmit(true, true, false, true);
-        emit ClippoEscrow.HumanAttested(id, admin, att, 1);
+        emit ClippoEscrow.HumanAttested(id, admin, p.human, 1);
         vm.prank(admin);
-        escrow.approveCampaign(id, att);
-        assertEq(escrow.approvalAttestation(id), att);
+        escrow.approveCampaign(id, p);
+        assertEq(escrow.approvalAttestation(id), p.human);
         assertEq(uint8(escrow.getCampaign(id).state), uint8(ClippoEscrow.State.Approved));
     }
 
@@ -705,27 +705,15 @@ contract ClippoEscrowTest is Test {
         assertEq(escrow.approvalAttestation(id), bytes32(0));
     }
 
-    function test_highValue_splitNeedsAttestationPerApprover() public {
+    function test_highValue_approvalProofIsCheckedOnChain() public {
         vm.prank(owner);
         escrow.setHighValueThreshold(1_000e6);
-        uint256 id = _create(ClippoEscrow.Mode.HumanSplit, 0, true);
+        uint256 id = _create(ClippoEscrow.Mode.PerView, 5e6, false);
+        // the old "any non-zero hash" trick no longer works
+        ClippoEscrow.HumanProof memory fake = _approval(escrow, id, 1, bytes32(0), admin, keccak256("x"), uint64(block.timestamp + 1), 0xBAD);
         vm.prank(admin);
-        escrow.approveCampaign(id, keccak256("a"));
-
-        vm.prank(campaigner);
-        vm.expectRevert(ClippoEscrow.AttestationRequired.selector);
-        escrow.approveSplit(id, _arr(alice), _u(100e6));
-
-        bytes32 ac = keccak256("campaigner-proof");
-        bytes32 aa = keccak256("admin-proof");
-        vm.prank(campaigner);
-        escrow.approveSplit(id, _arr(alice), _u(100e6), ac);
-        assertEq(escrow.claimable(id, alice), 0);
-        vm.prank(admin);
-        escrow.approveSplit(id, _arr(alice), _u(100e6), aa);
-        assertEq(escrow.claimable(id, alice), 100e6);
-        assertEq(escrow.splitAttestation(id, campaigner), ac);
-        assertEq(escrow.splitAttestation(id, admin), aa);
+        vm.expectRevert(ClippoEscrow.BadHumanProof.selector);
+        escrow.approveCampaign(id, fake);
     }
 
     function test_highValue_thresholdOnlyOwner() public {
@@ -747,6 +735,345 @@ contract ClippoEscrowTest is Test {
         escrow.rejectCampaign(id);
         assertEq(usdc.balanceOf(campaigner), before_); // full refund incl. fee
         assertEq(escrow.treasuryAccrued(), 0);
+    }
+
+    // --------------------------------------- nobody picks who gets paid
+    function test_admin_cannotFinalizeSplitAlone() public {
+        uint256 id = _createApproved(ClippoEscrow.Mode.HumanSplit, 0, false);
+        vm.expectRevert(ClippoEscrow.NotApprover.selector);
+        _approveSplit(admin, id, _arr(alice), _u(100e6));
+    }
+
+    function test_admin_cannotReportViewsOrSwapCre() public {
+        uint256 id = _createApproved(ClippoEscrow.Mode.PerView, 5e6, false);
+        vm.prank(admin);
+        vm.expectRevert(ClippoEscrow.NotAdapter.selector);
+        escrow.reportViews(id, alice, 1000);
+        vm.prank(owner);
+        vm.expectRevert(ClippoEscrow.AdapterAlreadySet.selector);
+        escrow.setReportAdapter(owner);
+    }
+
+    function test_owner_cannotShortenRetentionOfLiveCampaign() public {
+        vm.prank(owner);
+        escrow.setRetentionPeriod(7 days);
+        uint256 id = _createApproved(ClippoEscrow.Mode.PerView, 5e6, false);
+        _report(id, alice, 10_000);
+        vm.prank(owner);
+        escrow.setRetentionPeriod(0);
+        assertEq(escrow.claimable(id, alice), 0);
+        vm.warp(block.timestamp + 7 days);
+        assertEq(escrow.claimable(id, alice), 50e6);
+    }
+
+    // ------------------------------------------------- World ID on-chain
+    function test_split_needsRealFreshAttestation() public {
+        uint256 id = _createApproved(ClippoEscrow.Mode.HumanSplit, 0, false);
+        address[] memory cs = _arr(alice);
+        uint256[] memory amts = _u(100e6);
+        bytes32 h = keccak256(abi.encode(cs, amts));
+        uint64 exp = uint64(block.timestamp + 1 hours);
+        bytes32 human = keccak256("campaigner");
+
+        // no proof
+        ClippoEscrow.HumanProof memory none;
+        vm.prank(campaigner);
+        vm.expectRevert(ClippoEscrow.AttestationRequired.selector);
+        escrow.approveSplit(id, cs, amts, none);
+
+        // wrong signer
+        ClippoEscrow.HumanProof memory p = _approval(escrow, id, 2, h, campaigner, human, exp, 0xBAD);
+        vm.prank(campaigner);
+        vm.expectRevert(ClippoEscrow.BadHumanProof.selector);
+        escrow.approveSplit(id, cs, amts, p);
+
+        // proof for a different split
+        p = _approval(escrow, id, 2, keccak256("other split"), campaigner, human, exp, ATTESTOR_KEY);
+        vm.prank(campaigner);
+        vm.expectRevert(ClippoEscrow.BadHumanProof.selector);
+        escrow.approveSplit(id, cs, amts, p);
+
+        // proof issued to someone else
+        p = _approval(escrow, id, 2, h, admin, human, exp, ATTESTOR_KEY);
+        vm.prank(campaigner);
+        vm.expectRevert(ClippoEscrow.BadHumanProof.selector);
+        escrow.approveSplit(id, cs, amts, p);
+
+        // expired
+        p = _approval(escrow, id, 2, h, campaigner, human, exp, ATTESTOR_KEY);
+        vm.warp(exp + 1);
+        vm.prank(campaigner);
+        vm.expectRevert(ClippoEscrow.HumanProofExpired.selector);
+        escrow.approveSplit(id, cs, amts, p);
+        vm.warp(exp);
+
+        // valid once, replay refused (would pay the same split twice)
+        vm.prank(campaigner);
+        escrow.approveSplit(id, cs, amts, p);
+        assertEq(escrow.credited(id, alice), 100e6);
+        vm.prank(campaigner);
+        vm.expectRevert(ClippoEscrow.HumanProofUsed.selector);
+        escrow.approveSplit(id, cs, amts, p);
+    }
+
+    function test_split_twoApproversMustBeTwoHumans() public {
+        uint256 id = _createApproved(ClippoEscrow.Mode.HumanSplit, 0, true);
+        address[] memory cs = _arr(alice);
+        uint256[] memory amts = _u(100e6);
+        bytes32 h = keccak256(abi.encode(cs, amts));
+        uint64 exp = uint64(block.timestamp + 1 hours);
+        bytes32 same = keccak256("same person");
+        ClippoEscrow.HumanProof memory p1 = _approval(escrow, id, 2, h, campaigner, same, exp, ATTESTOR_KEY);
+        ClippoEscrow.HumanProof memory p2 = _approval(escrow, id, 2, h, admin, same, exp, ATTESTOR_KEY);
+        vm.prank(campaigner);
+        escrow.approveSplit(id, cs, amts, p1);
+        vm.prank(admin);
+        vm.expectRevert(ClippoEscrow.SameHuman.selector);
+        escrow.approveSplit(id, cs, amts, p2);
+    }
+
+    function test_unverifiedWallet_cannotBeCreditedAnyWay() public {
+        uint256 pv = _createApproved(ClippoEscrow.Mode.PerView, 5e6, false);
+        vm.prank(address(receiver));
+        vm.expectRevert(ClippoEscrow.NotHuman.selector);
+        escrow.reportViews(pv, eve, 1000);
+
+        uint256 ps = _createApproved(ClippoEscrow.Mode.PoolShare, 0, false);
+        vm.prank(address(receiver));
+        vm.expectRevert(ClippoEscrow.NotHuman.selector);
+        escrow.reportViews(ps, eve, 1000);
+
+        uint256 hs = _createApproved(ClippoEscrow.Mode.HumanSplit, 0, false);
+        vm.expectRevert(ClippoEscrow.NotHuman.selector);
+        _approveSplit(campaigner, hs, _arr(eve), _u(1e6));
+    }
+
+    function test_registerHuman_oneHumanOneWallet() public {
+        bytes32 human = keccak256("eve the human");
+        // self-signed attestation refused
+        ClippoEscrow.HumanProof memory bad = _regProof(escrow, eve, human, 0xBAD);
+        vm.expectRevert(ClippoEscrow.BadHumanProof.selector);
+        escrow.registerHuman(eve, bad);
+
+        escrow.registerHuman(eve, _regProof(escrow, eve, human, ATTESTOR_KEY));
+        assertEq(escrow.humanOf(eve), human);
+        assertEq(escrow.walletOfHuman(human), eve);
+        // repeating is harmless
+        escrow.registerHuman(eve, _regProof(escrow, eve, human, ATTESTOR_KEY));
+
+        // same human, second wallet
+        address sybil = makeAddr("sybil");
+        ClippoEscrow.HumanProof memory p = _regProof(escrow, sybil, human, ATTESTOR_KEY);
+        vm.expectRevert(ClippoEscrow.HumanAlreadyLinked.selector);
+        escrow.registerHuman(sybil, p);
+        // same wallet, second human
+        p = _regProof(escrow, eve, keccak256("other"), ATTESTOR_KEY);
+        vm.expectRevert(ClippoEscrow.HumanAlreadyLinked.selector);
+        escrow.registerHuman(eve, p);
+        // expired
+        p = _regProof(escrow, sybil, keccak256("late"), ATTESTOR_KEY);
+        vm.warp(block.timestamp + 1 hours + 1);
+        vm.expectRevert(ClippoEscrow.HumanProofExpired.selector);
+        escrow.registerHuman(sybil, p);
+    }
+
+    // ------------------------------------------- Clippo-triggered payout
+    function test_claimFor_paysOnlyTheCreator() public {
+        uint256 id = _createApproved(ClippoEscrow.Mode.HumanSplit, 0, false);
+        _approveSplit(campaigner, id, _arr(alice), _u(100e6));
+        uint256 adminBefore = usdc.balanceOf(admin);
+
+        vm.prank(admin); // Clippo's wallet presses "pay"
+        uint256 net = escrow.claimFor(id, alice);
+        assertEq(net, 100e6 - (100e6 * 25) / 10_000);
+        assertEq(usdc.balanceOf(alice), net);
+        assertEq(usdc.balanceOf(admin), adminBefore);
+
+        vm.prank(admin);
+        vm.expectRevert(ClippoEscrow.NothingToClaim.selector);
+        escrow.claimFor(id, alice);
+        // nothing credited to the admin, so nothing to send it
+        vm.prank(admin);
+        vm.expectRevert(ClippoEscrow.NothingToClaim.selector);
+        escrow.claimFor(id, admin);
+    }
+
+    function test_claimFor_respectsRetention() public {
+        vm.prank(owner);
+        escrow.setRetentionPeriod(7 days);
+        uint256 id = _createApproved(ClippoEscrow.Mode.PerView, 5e6, false);
+        _report(id, alice, 10_000);
+        vm.prank(admin);
+        vm.expectRevert(ClippoEscrow.NothingToClaim.selector);
+        escrow.claimFor(id, alice);
+        vm.warp(block.timestamp + 7 days);
+        vm.prank(admin);
+        escrow.claimFor(id, alice);
+        assertGt(usdc.balanceOf(alice), 0);
+    }
+
+    // ---------------------------------------------------------- disputes
+    function _disputed() internal returns (uint256 id) {
+        vm.prank(owner);
+        escrow.setRetentionPeriod(7 days);
+        id = _createApproved(ClippoEscrow.Mode.PerView, 5e6, false);
+        _report(id, alice, 10_000); // 50 USDC
+        vm.prank(campaigner);
+        escrow.disputeCredits(id, alice);
+    }
+
+    function test_dispute_upheld_returnsCreditsToPool() public {
+        uint256 id = _disputed();
+        assertEq(escrow.remainingPool(id), NET - 50e6);
+        vm.prank(admin);
+        escrow.resolveDispute(id, alice, true);
+        assertEq(escrow.remainingPool(id), NET);
+        assertEq(escrow.credited(id, alice), 0);
+        vm.warp(block.timestamp + 8 days);
+        assertEq(escrow.claimable(id, alice), 0);
+        vm.prank(alice);
+        vm.expectRevert(ClippoEscrow.NothingToClaim.selector);
+        escrow.claim(id);
+        // the same fake views cannot be credited again
+        _report(id, alice, 10_000);
+        assertEq(escrow.credited(id, alice), 0);
+    }
+
+    function test_dispute_blocksClaimWhileOpen_thenDeniedReleases() public {
+        uint256 id = _disputed();
+        uint256 t0 = block.timestamp;
+        vm.warp(t0 + 7 days);
+        assertEq(escrow.claimable(id, alice), 0); // matured, but disputed
+        vm.prank(admin);
+        escrow.resolveDispute(id, alice, false);
+        assertEq(escrow.claimable(id, alice), 50e6);
+        // the brand gets one try per tranche
+        vm.prank(campaigner);
+        vm.expectRevert(ClippoEscrow.NothingToDispute.selector);
+        escrow.disputeCredits(id, alice);
+    }
+
+    function test_dispute_lapses_automaticRelease() public {
+        uint256 id = _disputed();
+        (uint64 resolveBy,,) = escrow.disputes(id, alice);
+        assertEq(resolveBy, block.timestamp + 7 days);
+        vm.warp(resolveBy + 1);
+        assertEq(escrow.claimable(id, alice), 50e6);
+        vm.prank(admin);
+        vm.expectRevert(ClippoEscrow.NoOpenDispute.selector);
+        escrow.resolveDispute(id, alice, true);
+        vm.prank(alice);
+        escrow.claim(id);
+    }
+
+    function test_dispute_afterClose_refundsCampaigner_notAdmin() public {
+        vm.prank(owner);
+        escrow.setRetentionPeriod(7 days);
+        uint256 id = _createApproved(ClippoEscrow.Mode.PerView, 5e6, false);
+        vm.warp(deadline - 1);
+        _report(id, alice, 10_000);
+        vm.warp(deadline + 1);
+        escrow.closeCampaign(id);
+        vm.prank(campaigner);
+        escrow.disputeCredits(id, alice);
+        uint256 before_ = usdc.balanceOf(campaigner);
+        uint256 adminBefore = usdc.balanceOf(admin);
+        vm.prank(admin);
+        escrow.resolveDispute(id, alice, true);
+        assertEq(usdc.balanceOf(campaigner) - before_, 50e6);
+        assertEq(usdc.balanceOf(admin), adminBefore);
+        assertEq(usdc.balanceOf(address(escrow)), escrow.treasuryAccrued());
+    }
+
+    function test_dispute_cannotTouchMaturedOrOlderOrAskTwice() public {
+        vm.prank(owner);
+        escrow.setRetentionPeriod(2 days);
+        uint256 id = _createApproved(ClippoEscrow.Mode.PerView, 5e6, false);
+        _report(id, alice, 10_000); // 50, day 0
+        vm.warp(block.timestamp + 2 days + 1);
+        _report(id, alice, 20_000); // 50, now
+        vm.prank(campaigner);
+        escrow.disputeCredits(id, alice);
+        // the matured first tranche stays with the creator
+        assertEq(escrow.claimable(id, alice), 50e6);
+        vm.prank(campaigner);
+        vm.expectRevert(ClippoEscrow.DisputeOpen.selector);
+        escrow.disputeCredits(id, alice);
+        vm.prank(admin);
+        escrow.resolveDispute(id, alice, true);
+        assertEq(escrow.credited(id, alice), 50e6);
+        vm.prank(alice);
+        escrow.claim(id);
+        assertEq(escrow.claimed(id, alice), 50e6);
+    }
+
+    function test_dispute_newCreditSameDayDoesNotJoinDisputedTranche() public {
+        uint256 id = _disputed();
+        _report(id, alice, 20_000); // another 50, same day
+        assertEq(escrow.tranches(id, alice).length, 2);
+        vm.prank(admin);
+        escrow.resolveDispute(id, alice, true);
+        assertEq(escrow.credited(id, alice), 50e6);
+    }
+
+    function test_dispute_access() public {
+        vm.prank(owner);
+        escrow.setRetentionPeriod(7 days);
+        uint256 id = _createApproved(ClippoEscrow.Mode.PerView, 5e6, false);
+        _report(id, alice, 10_000);
+        vm.prank(admin);
+        vm.expectRevert(ClippoEscrow.NotCampaigner.selector);
+        escrow.disputeCredits(id, alice);
+        vm.prank(campaigner);
+        escrow.disputeCredits(id, alice);
+        vm.prank(campaigner);
+        vm.expectRevert(ClippoEscrow.NotAdmin.selector);
+        escrow.resolveDispute(id, alice, true);
+
+        uint256 hs = _createApproved(ClippoEscrow.Mode.HumanSplit, 0, false);
+        vm.prank(campaigner);
+        vm.expectRevert(ClippoEscrow.BadMode.selector);
+        escrow.disputeCredits(hs, alice);
+    }
+
+    // -------------------------------------------------- stuck-money exits
+    function test_reclaimUnapproved_afterDeadlineOnly() public {
+        uint256 before_ = usdc.balanceOf(campaigner);
+        uint256 id = _create(ClippoEscrow.Mode.PerView, 5e6, false);
+        vm.prank(campaigner);
+        vm.expectRevert(ClippoEscrow.DeadlineNotReached.selector);
+        escrow.reclaimUnapproved(id);
+        vm.warp(deadline + 1);
+        vm.prank(eve);
+        vm.expectRevert(ClippoEscrow.NotCampaigner.selector);
+        escrow.reclaimUnapproved(id);
+        vm.prank(admin);
+        vm.expectRevert(ClippoEscrow.DeadlinePassed.selector);
+        escrow.approveCampaign(id);
+        vm.prank(campaigner);
+        escrow.reclaimUnapproved(id);
+        assertEq(usdc.balanceOf(campaigner), before_);
+    }
+
+    function testFuzz_disputeKeepsBooksBalanced(uint32 views, bool upheld, bool closeFirst) public {
+        vm.prank(owner);
+        escrow.setRetentionPeriod(7 days);
+        uint256 id = _createApproved(ClippoEscrow.Mode.PerView, 5e6, false);
+        vm.warp(deadline - 1);
+        _report(id, alice, views);
+        if (closeFirst) {
+            vm.warp(deadline + 1);
+            escrow.closeCampaign(id);
+        }
+        if (escrow.credited(id, alice) == 0) return;
+        vm.prank(campaigner);
+        escrow.disputeCredits(id, alice);
+        vm.prank(admin);
+        escrow.resolveDispute(id, alice, upheld);
+        ClippoEscrow.Campaign memory c = escrow.getCampaign(id);
+        uint256 owed = escrow.treasuryAccrued() + escrow.pendingTotal(id, alice);
+        if (!closeFirst) owed += c.pool - c.allocated;
+        assertEq(usdc.balanceOf(address(escrow)), owed);
     }
 
     // ------------------------------------------------ invariants
@@ -773,7 +1100,7 @@ contract ClippoEscrowTest is Test {
     function test_constructor_rejectsNon6DecimalToken() public {
         Fake18 bad = new Fake18();
         vm.expectRevert(ClippoEscrow.BadParams.selector);
-        new ClippoEscrow(address(bad), treasury, owner);
+        new ClippoEscrow(address(bad), treasury, owner, attestor);
     }
 }
 

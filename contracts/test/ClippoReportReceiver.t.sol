@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Test} from "forge-std/Test.sol";
+import {HumanHelper} from "./HumanHelper.sol";
 import {ClippoEscrow} from "../src/ClippoEscrow.sol";
 import {ClippoReportReceiver, IReceiver} from "../src/ClippoReportReceiver.sol";
 import {MockUSDC} from "../src/MockUSDC.sol";
@@ -9,7 +9,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 /// Workflow-identity validation in ClippoReportReceiver.onReport (metadata from the KeystoneForwarder).
-contract ClippoReportReceiverTest is Test {
+contract ClippoReportReceiverTest is HumanHelper {
     ClippoEscrow escrow;
     ClippoReportReceiver receiver;
     MockUSDC usdc;
@@ -30,7 +30,7 @@ contract ClippoReportReceiverTest is Test {
 
     function setUp() public {
         usdc = new MockUSDC();
-        escrow = new ClippoEscrow(address(usdc), treasury, owner);
+        escrow = new ClippoEscrow(address(usdc), treasury, owner, attestor);
         receiver = new ClippoReportReceiver(address(escrow), forwarder, owner, wfOwner, false);
         vm.startPrank(owner);
         escrow.setAdmin(admin, true);
@@ -47,6 +47,7 @@ contract ClippoReportReceiverTest is Test {
         vm.stopPrank();
         vm.prank(admin);
         escrow.approveCampaign(id);
+        _register(escrow, alice);
     }
 
     function _meta(bytes32 wid, bytes10 name, address wo) internal pure returns (bytes memory) {
@@ -161,15 +162,36 @@ contract ClippoReportReceiverTest is Test {
         receiver.onReport(meta, rep);
     }
 
+    function _freshSkipReceiver(address operator) internal returns (ClippoEscrow e, ClippoReportReceiver r, uint256 cid) {
+        e = new ClippoEscrow(address(usdc), treasury, owner, attestor);
+        r = new ClippoReportReceiver(address(e), forwarder, owner, operator, true);
+        vm.startPrank(owner);
+        e.setAdmin(admin, true);
+        e.setReportAdapter(address(r));
+        e.setHighValueThreshold(type(uint256).max);
+        vm.stopPrank();
+        vm.startPrank(campaigner);
+        usdc.approve(address(e), type(uint256).max);
+        cid = e.createCampaign(ClippoEscrow.Mode.PerView, 10e6, 1_000e6, uint64(block.timestamp + 30 days), false, "ipfs://x");
+        vm.stopPrank();
+        vm.prank(admin);
+        e.approveCampaign(cid);
+        _register(e, alice);
+    }
+
+    function _rep(uint256 cid, uint256 views) internal view returns (bytes memory) {
+        ClippoReportReceiver.ViewReport[] memory items = new ClippoReportReceiver.ViewReport[](1);
+        items[0] = ClippoReportReceiver.ViewReport(cid, alice, views);
+        return abi.encode(items);
+    }
+
     function test_skipFlag_allowsEmptyMetadata_butNotWrongSender() public {
-        ClippoReportReceiver r = new ClippoReportReceiver(address(escrow), forwarder, owner, address(0), true);
+        (ClippoEscrow e, ClippoReportReceiver r, uint256 cid) = _freshSkipReceiver(address(0));
         assertTrue(r.workflowCheckSkipped());
-        vm.prank(owner);
-        escrow.setReportAdapter(address(r));
-        bytes memory rep = _report(1000);
+        bytes memory rep = _rep(cid, 1000);
         vm.prank(forwarder);
         r.onReport("", rep);
-        assertEq(escrow.reportedViews(id, alice), 1000);
+        assertEq(e.reportedViews(cid, alice), 1000);
         vm.prank(eve);
         vm.expectRevert(ClippoReportReceiver.NotForwarder.selector);
         r.onReport("", rep);
@@ -179,6 +201,43 @@ contract ClippoReportReceiverTest is Test {
         vm.prank(forwarder);
         vm.expectRevert(ClippoReportReceiver.WorkflowOwnerNotConfigured.selector);
         r.onReport("", rep);
+    }
+
+    function test_skipFlag_onlySimulationOperatorCanReport() public {
+        (ClippoEscrow e, ClippoReportReceiver r, uint256 cid) = _freshSkipReceiver(wfOwner);
+        bytes memory rep = _rep(cid, 1000);
+        // a stranger pushing through the open mock forwarder is refused
+        vm.prank(forwarder, eve);
+        vm.expectRevert(ClippoReportReceiver.NotSimulationOperator.selector);
+        r.onReport("", rep);
+        vm.prank(forwarder, wfOwner);
+        r.onReport("", rep);
+        assertEq(e.reportedViews(cid, alice), 1000);
+    }
+
+    function test_lockConfig_isForever_andNeedsRealChecks() public {
+        (, ClippoReportReceiver r,) = _freshSkipReceiver(wfOwner);
+        vm.prank(owner);
+        vm.expectRevert(ClippoReportReceiver.CannotLockWhileSkipping.selector);
+        r.lockConfig();
+
+        vm.prank(eve);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, eve));
+        receiver.lockConfig();
+
+        vm.startPrank(owner);
+        receiver.lockConfig();
+        assertTrue(receiver.configLocked());
+        vm.expectRevert(ClippoReportReceiver.ConfigIsLocked.selector);
+        receiver.setForwarder(eve);
+        vm.expectRevert(ClippoReportReceiver.ConfigIsLocked.selector);
+        receiver.setWorkflowCheckSkipped(true);
+        vm.expectRevert(ClippoReportReceiver.ConfigIsLocked.selector);
+        receiver.setExpectedWorkflowOwner(eve);
+        vm.stopPrank();
+        // reports still work
+        _send(_meta(WF_ID, WF_NAME, wfOwner), 1000);
+        assertEq(escrow.reportedViews(id, alice), 1000);
     }
 
     function test_configOnlyOwner() public {
