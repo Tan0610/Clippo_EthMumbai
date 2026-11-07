@@ -45,6 +45,12 @@ Track status at the start:
 
 ## Log
 
+### 25. Diagram exported to PNG; duplicate IDKit doc removed (pending commit)
+
+- **What:** rendered `docs/architecture.svg` → `docs/architecture.png` (1200×1170 @2x, headless Chromium) for the submission form. Removed `docs/IDKIT_SUBMISSION.md` (added in entry 24) as a duplicate of the teammate's canonical, more-accurate `docs/tracks/WORLD_IDKIT.md` + `world-idkit-debrief.md`; those remain the IDKit source of truth.
+- **Why:** owner asked to finish everything except the video; de-dupe the IDKit docs.
+- **Still owner-only, NOT done:** make the Arc Studio URL public; run one live campaign on `0xc7b9588`; run a real IDKit proof (none has ever run — see `WORLD_IDKIT.md`) + an alternative path; fill the debrief numbers; record the video.
+
 ### 24. OpenAI LLM provider added; Arc submission refocused on the Studio-built escrow (pending commit)
 
 - **What:**
