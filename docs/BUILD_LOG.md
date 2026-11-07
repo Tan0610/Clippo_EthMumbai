@@ -45,6 +45,16 @@ Track status at the start:
 
 ## Log
 
+### 24. OpenAI LLM provider added; Arc submission refocused on the Studio-built escrow (pending commit)
+
+- **What:**
+  - Added an **OpenAI provider** to `web/src/lib/ai/llm.ts`: a fetch-based Chat Completions transport (JSON mode, no new dependency) next to Anthropic and Gemini, chosen with `LLM_PROVIDER=openai` + `OPENAI_API_KEY` (default `gpt-4o-mini`). `docs/DEPLOY_ENV.md` documents it. (Committed earlier to `main` as `bb2fbec` at the owner's request — noted here; not on the feature branch.)
+  - Rewrote `docs/SUBMISSION_ARC.md` to be **solely about the Arc Studio-built `ClippoEscrow` `0xc7b9588`** (owner's decision: the Arc entry is the Studio-deployed contract, regardless of the live enforcing escrow `0x1e05373c`). Feature table re-mapped honestly to the 3-arg contract: it has conditional escrow + auto-release via retention, PerView/HumanSplit/PoolShare, two-sided fees + treasury, a high-value World ID attestation hook, adapter `reportViews`; it does **not** have disputes/`claimFor`/on-chain human registry. Requirement (a) "Built in Arc Studio" now **Met**.
+  - Added `docs/IDKIT_SUBMISSION.md` (trust rationale + debrief). **Overlaps** the teammate's `docs/tracks/world-idkit-*.md` — de-duplicate before submitting.
+- **Why:** owner chose to satisfy Arc's "Built in Arc Studio" requirement with the Studio-deployed contract, and to move the AI verifier to OpenAI.
+- **Tests:** LLM unit tests 40/40; a real OpenAI call (gpt-4o-mini, JSON mode) returned valid JSON; `typecheck` clean after regenerating Next types; `e2e:chain` 48/48 on the merged tree.
+- **Not proven:** no live campaign fund→claim run against `0xc7b9588` specifically on Arc (logic is Foundry/E2E-tested; the live site uses the enforcing escrow). OpenAI on the deployed site needs a redeploy from `main` + `OPENAI_API_KEY` / `LLM_PROVIDER=openai`.
+
 ### 22. PR #2 merged into main and the site redeployed from main, no repo commit
 
 - **What:** PR #2 (`feat/cre-core` into `main`) was merged with a merge commit, `ab35b35`; `main` is identical to the tree tested on the branch (0 differing files). The teammate's migration `20261106000000_world_stepup` was applied to the `clippo-cre` Neon database first (without it the site would have broken). Then `https://clippo-cre.vercel.app` was redeployed with the Vercel CLI from a clean checkout of `main` (the project is not connected to GitHub, so every deploy is a CLI upload).
