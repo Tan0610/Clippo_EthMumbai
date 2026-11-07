@@ -45,6 +45,17 @@ Track status at the start:
 
 ## Log
 
+### 24. Admin wallet setup: Vercel variables, ADMIN_WALLETS, owner script, commit pending
+
+What changed:
+- Vercel production variables added (names only; values never printed): `GEMINI_API_KEY`, `LLM_PROVIDER=gemini` (explicit, because main now also supports OpenAI and would prefer it when both keys exist), `OPENAI_API_KEY`, `OPENAI_MODEL` (stored for later, not in use), `WORLD_ID_APP_ID`, `WORLD_ID_RP_ID`, `WORLD_ID_SIGNING_KEY`, `WORLD_ID_ENVIRONMENT=staging`, `AGENT_PASS_DEMO`, and `ADMIN_WALLETS=0xC201…6325`. Not added on purpose: other keys from a different project's `.env` (deployer and gate keys), and the creator wallet `0x8CF9…60e5` is not an admin in the app.
+- Site redeployed from `main` at `bb2fbec` (includes another session's OpenAI provider commit). Live `/api/health`: `llm`, `worldId`, `adminWallets` true; `ready` still false (no file storage).
+- New `cre/scripts/set-admin.sh`: owner-only, hidden key prompt, refuses a key that is not the escrow `owner()`, calls `setAdmin(address,bool)`, prints `isAdmin` after.
+
+Checked (read-only, on Arc testnet): escrow `owner()` = `0x8CF9…60e5`; `isAdmin(0xC201…6325)` was false before; the script's syntax and address validation were run.
+
+Not proven: the on-chain `setAdmin(0xC201…6325, true)` has NOT been sent (needs the owner key). No tx hash yet. The admin sign-in on the live site was not tested. The OpenAI model name `gpt-6-luna` is unverified and not in use.
+
 ### 22. PR #2 merged into main and the site redeployed from main, no repo commit
 
 - **What:** PR #2 (`feat/cre-core` into `main`) was merged with a merge commit, `ab35b35`; `main` is identical to the tree tested on the branch (0 differing files). The teammate's migration `20261106000000_world_stepup` was applied to the `clippo-cre` Neon database first (without it the site would have broken). Then `https://clippo-cre.vercel.app` was redeployed with the Vercel CLI from a clean checkout of `main` (the project is not connected to GitHub, so every deploy is a CLI upload).
