@@ -21,7 +21,7 @@ export function Slip({ c }: { c: Campaign }) {
   const pct = c.pool ? (c.paid / c.pool) * 100 : 0;
   return (
     <Link href={`/slips/${c.id}`} className="slip">
-      <span className="serial">No. {c.serial}</span>
+      <span className="serial">#{c.serial}</span>
       <div className="meta">
         <span className="micro">{c.brand}</span>
         <span className="micro">{MODE_LABEL[c.mode]}</span>
@@ -65,7 +65,7 @@ export function Slip({ c }: { c: Campaign }) {
   );
 }
 
-export function Loading({ label = "Setting type", rows = 4 }: { label?: string; rows?: number }) {
+export function Loading({ label = "Loading", rows = 4 }: { label?: string; rows?: number }) {
   return (
     <div className="state-load" role="status" aria-live="polite">
       <div className="ln">
@@ -96,7 +96,7 @@ export function Correction({ what, fix, cause, onRetry }: { what: string; fix?: 
   if (svc) return <ServiceState what={svc} onRetry={onRetry} />;
   return (
     <div className="correction" role="alert">
-      <span className="micro">Correction</span>
+      <span className="micro">Problem</span>
       <b>{what}</b>
       {fix && <span>{fix}</span>}
       {onRetry && (

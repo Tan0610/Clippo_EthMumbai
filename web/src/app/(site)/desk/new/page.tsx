@@ -7,7 +7,7 @@ export const metadata: Metadata = { title: "New campaign" };
 export default function Page() {
   return (
     <div className="wrap page">
-      <PageHead kicker={<><span>Desk</span><span>New campaign</span></>} title={<>One question at a <em>time</em></>}>
+      <PageHead kicker={<><span>My campaigns</span><span>New campaign</span></>} title={<>One question at a <em>time</em></>}>
         Nothing is charged until the last step. You can go back and change any answer.
       </PageHead>
       <Wizard />

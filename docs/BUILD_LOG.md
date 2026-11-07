@@ -45,6 +45,20 @@ Track status at the start:
 
 ## Log
 
+### 26. UI transformation "Night Studio": dark greyish look, floating dock, new hero, plain words, pending commit
+
+**What changed:** look and wording only. No API, lib, hook, handler, state, route or data change.
+- Theme: dark greyish only (no light mode, no green). One accent (orange). Lexend + JetBrains Mono replace Bodoni/Schibsted/Martian Mono. Token names in `globals.css` are unchanged; values and components restyled (buttons, fields, cards, tables, verdict pills, loaders, sheets).
+- Shell: floating glass dock with icons replaces the masthead; mobile has a Menu sheet. The date strip and theme toggle are gone.
+- Landing: new hero (parallax, staged reveals) using the existing `/clips` sample videos in floating windows; sections rebuilt as cards.
+- Motion: page/list entrance, hover lifts, press feedback (`components/ui/UiFx.tsx`), skeleton loaders, spinner on busy wallet button. Everything off under reduced motion.
+- Words: Wire to Campaigns, Desk to My campaigns, Ledger to Earnings, Bench to Admin review, Slip to Campaign, Standing to Top creators, Stamp to verdict pill ("Needs your review"), Pool to Budget (labels only; URLs unchanged). Role dialog heading is now "How will you use Clippo?"; the 4 scripts that matched `/Which desk/` were updated.
+
+**Files:** `web/src/app/globals.css`, `layout.tsx`, `landing.css`, `testdeploy.css`, `page.tsx`; `web/src/components/` Shell, Stamp, Icons, Bits, LoopClip(.css), ext/market/confirmed/service-state/wallet-picker CSS, `landing/*`, `workspace/*`, copy in a few views; new `ui/UiFx.tsx`, `landing/HeroStage.tsx`; plan in `docs/ui/07-ui-transformation-plan.md`.
+
+**Tests:** typecheck, lint (0 errors), vitest 325 passed / 1 skipped, same as before the change. Screenshots of the main screens checked at 1440 and 390 px.
+**Not proven:** the wallet/World ID e2e scripts were not run (they need a database and keys). Not every page was visually checked on every state (signed-in dashboards, wizard steps 2 to 8, fund page).
+
 ### 25. UI guide written from the code and screenshots, commit pending
 
 What changed: new `docs/UI.md` (entry guide: fonts, color tokens, routes, label proposals, biggest problems) and six detail files in `docs/ui/` (design system, shell and routes, brand and admin screens, creator screens, visual pass, glossary and copy). 16 desktop Paper screenshots in `docs/ui/shots/`. Why: the owner finds the newspaper names hard to understand and wants one reference to improve the UX. No app code changed.

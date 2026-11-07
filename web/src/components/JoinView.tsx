@@ -245,8 +245,8 @@ export function JoinView() {
 
   return (
     <div className="wrap page">
-      <PageHead kicker={<span>Join</span>} title={<>Two desks. <em>Pick one.</em></>}>
-        A wallet holds one role. To try the other desk, use another account in your wallet.
+      <PageHead kicker={<span>Join</span>} title={<>How will you <em>use Clippo?</em></>}>
+        A wallet holds one role. To try the other role, use another account in your wallet.
       </PageHead>
 
       {!role && (
@@ -298,7 +298,7 @@ export function JoinView() {
           {channel && (
             <li className="stack rise">
               <span className="micro">Done</span>
-              <h2 className="display h3">You&rsquo;re on the wire.</h2>
+              <h2 className="display h3">You&rsquo;re in. Campaigns are open.</h2>
               <Link href="/wire" className="btn" style={{ justifySelf: "start" }}>Find a campaign <Arrow size={18} /></Link>
             </li>
           )}

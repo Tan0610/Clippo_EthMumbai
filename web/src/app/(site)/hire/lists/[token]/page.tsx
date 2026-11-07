@@ -7,7 +7,7 @@ export const metadata: Metadata = { title: "Shortlist" };
 
 export default function Page() {
   return (
-    <Suspense fallback={<div className="wrap page"><Loading label="Pulling the list" rows={5} /></div>}>
+    <Suspense fallback={<div className="wrap page"><Loading label="Loading the list" rows={5} /></div>}>
       <ListView />
     </Suspense>
   );

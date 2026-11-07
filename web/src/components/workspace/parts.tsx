@@ -46,7 +46,7 @@ export function Ad({ c, clipped, onClip }: { c: DirCreator; clipped?: boolean; o
     <li className={`ad t-${c.tier.toLowerCase()}${clipped ? " is-clipped" : ""}`}>
       <div className="ad-lead">
         <span className="micro">For hire</span>
-        <span className="micro">No. {c.serial}</span>
+        <span className="micro">#{c.serial}</span>
       </div>
       <h3>{c.name}</h3>
       <div className="row" style={{ gap: 10 }}>

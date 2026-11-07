@@ -15,7 +15,7 @@ export function ListView() {
   const fn = useCallback(() => ws.list(token), [token]);
   const l = useAsync(fn);
 
-  if (l.status === "loading") return <div className="wrap page"><Loading label="Pulling the list" rows={5} /></div>;
+  if (l.status === "loading") return <div className="wrap page"><Loading label="Loading the list" rows={5} /></div>;
   if (l.status === "error") return <div className="wrap page"><Correction what="The list did not load." fix={errText(l.error)} onRetry={l.retry} /></div>;
   if (!l.data)
     return (
@@ -32,7 +32,7 @@ export function ListView() {
 
   return (
     <div className="wrap page">
-      <PageHead kicker={<><Link href="/hire">Hire</Link><span>Shortlist</span><span>Read only</span></>} title={<>{list.title}</>}>
+      <PageHead kicker={<><Link href="/hire">Hire creators</Link><span>Shortlist</span><span>Read only</span></>} title={<>{list.title}</>}>
         {rows.length} creators picked from the directory. Rates are the creators&rsquo; own, in USDC.
       </PageHead>
       <DemoNote />

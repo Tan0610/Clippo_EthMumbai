@@ -57,7 +57,7 @@ function ClipSplit({ approved, rejected, pending }: { approved: number; rejected
       <div className="legend">
         <span className="ok">Approved {approved}</span>
         <span className="no">Rejected {rejected}</span>
-        <span className="hold">Needs human {pending}</span>
+        <span className="hold">Needs your review {pending}</span>
       </div>
     </div>
   );
@@ -95,7 +95,7 @@ function One({ c }: { c: DeskCampaign }) {
 
       <div className="stack" style={{ gap: 8 }}>
         <span className="micro">Daily views, Clippo count</span>
-        {daily.status === "loading" && <Loading label="Pulling the daily count" rows={3} />}
+        {daily.status === "loading" && <Loading label="Loading daily count" rows={3} />}
         {daily.status === "error" && <Correction what="Daily views did not load." cause={daily.error} onRetry={daily.retry} />}
         {daily.status === "ready" && <DailyChart days={daily.data} />}
       </div>

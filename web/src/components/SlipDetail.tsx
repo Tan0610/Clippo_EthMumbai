@@ -42,7 +42,7 @@ function ViewsChart({ daily }: { daily: number[] }) {
 function DailyViews({ id }: { id: string }) {
   const fn = useCallback(() => mk.daily(id), [id]);
   const q = useAsync(fn);
-  if (q.status === "loading") return <Loading label="Pulling daily views" rows={2} />;
+  if (q.status === "loading") return <Loading label="Loading daily views" rows={2} />;
   if (q.status === "error") return <Correction what={q.error} onRetry={q.retry} />;
   const cumulative = q.data.reduce<number[]>((acc, d) => [...acc, (acc[acc.length - 1] ?? 0) + d.views], []);
   return <ViewsChart daily={cumulative} />;
@@ -87,7 +87,7 @@ function SubmissionRow({ s, onAppeal, cre }: { s: Submission; onAppeal: (id: str
         </div>
         <a href={s.url} className="handle" style={{ fontWeight: 700 }} target="_blank" rel="noreferrer noopener">{s.title}</a>
         <div className="note">
-          <span className="micro">Agent note</span>
+          <span className="micro">AI reason</span>
           {s.reason}
         </div>
         <AppealPanel s={s} onSent={onAppeal} />
@@ -167,8 +167,8 @@ function Detail({ c }: { c: Campaign }) {
     <div className="wrap page">
       <header className="page-head">
         <div className="micro">
-          <Link href="/wire">The Wire</Link>
-          <span>No. {c.serial}</span>
+          <Link href="/wire">Campaigns</Link>
+          <span>#{c.serial}</span>
           <span>{MODE_LABEL[c.mode]}</span>
           <DemoNote />
         </div>
@@ -267,7 +267,7 @@ function Detail({ c }: { c: Campaign }) {
                     <LinkReadiness url={url} allowed={c.platforms} />
                   </div>
                 </form>
-                {subs.status === "loading" && <Loading label="Pulling your clips" rows={3} />}
+                {subs.status === "loading" && <Loading label="Loading your clips" rows={3} />}
                 {subs.status === "error" && <Correction what="Your clips did not load." cause={subs.error} onRetry={subs.retry} />}
                 {subs.status === "ready" && all.length === 0 && <Empty title="No clips yet.">Paste a link above. The verdict lands here with its reason.</Empty>}
                 {all.length > 0 && <ul aria-live="polite">{all.map((x) => <SubmissionRow key={x.id} s={x} cre={hasConfirmed(c.mode)} onAppeal={(id) => setAppealed((a) => [...a, id])} />)}</ul>}
@@ -287,12 +287,12 @@ export function SlipDetail() {
   const { id } = useParams<{ id: string }>();
   const fn = useCallback(() => api.campaign(id), [id]);
   const c = useAsync(fn);
-  if (c.status === "loading") return <div className="wrap page"><Loading label="Pulling the slip" rows={6} /></div>;
+  if (c.status === "loading") return <div className="wrap page"><Loading label="Loading campaign" rows={6} /></div>;
   if (c.status === "error") return <div className="wrap page"><Correction what="That campaign could not be loaded." cause={c.error} onRetry={c.retry} /></div>;
   if (!c.data)
     return (
       <div className="wrap page">
-        <Empty title="No such slip." action={<Link href="/wire" className="btn sm">Back to the wire</Link>}>It may have closed, or the link is wrong.</Empty>
+        <Empty title="No such campaign." action={<Link href="/wire" className="btn sm">Back to campaigns</Link>}>It may have closed, or the link is wrong.</Empty>
       </div>
     );
   return <Detail c={c.data} />;

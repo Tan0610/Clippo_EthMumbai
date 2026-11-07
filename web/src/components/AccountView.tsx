@@ -83,13 +83,13 @@ export function AccountView() {
 
   return (
     <div className="wrap page">
-      <PageHead kicker={<span>Account</span>} title={<>Who&rsquo;s <em>signing</em></>} />
+      <PageHead kicker={<span>Account</span>} title={<>Your <em>account</em></>} />
       <div className="stack-lg" style={{ maxWidth: 820 }}>
         <section className="stack" aria-labelledby="id">
           <div className="section-title" style={{ marginBottom: 0 }}><h2 id="id">Identity</h2></div>
           <dl className="kv" style={{ maxWidth: 520 }}>
             <dt>Wallet</dt><dd>{s.address ?? "not connected"}</dd>
-            <dt>Desk</dt><dd>{s.address ? s.role : "—"}</dd>
+            <dt>Role</dt><dd>{s.address ? s.role : "—"}</dd>
             <dt>Human check</dt><dd>{s.verified ? <span className="row" style={{ justifyContent: "flex-end", gap: 6 }}>verified <VerifiedMark size={14} /></span> : "not verified"}</dd>
           </dl>
           <div className="row">
@@ -104,7 +104,7 @@ export function AccountView() {
         {s.address && s.role === "creator" && <Channels />}
 
         <section className="stack" aria-labelledby="role">
-          <div className="section-title" style={{ marginBottom: 0 }}><h2 id="role">Your desk</h2></div>
+          <div className="section-title" style={{ marginBottom: 0 }}><h2 id="role">Your role</h2></div>
           <p className="muted">Each wallet holds one role, chosen the first time it signs in and fixed after that. To use another desk, switch accounts in your wallet and connect again. Admin rights come from the operator&rsquo;s allow-list, not from this page.</p>
           {s.notice && <p className="notice warn" role="status">{s.notice}</p>}
         </section>

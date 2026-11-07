@@ -61,7 +61,7 @@ export function StatusView() {
   const next = me?.nextRequirements;
   return (
     <div className="wrap page">
-      <PageHead kicker={<><span>Status</span><span>Creator ladder</span></>} title={<>Climb on <em>approved work</em></>}>
+      <PageHead kicker={<><span>Levels</span><span>Creator levels</span></>} title={<>Climb on <em>approved work</em></>}>
         Tiers come from approved clips, approve rate and verified views. Followers are not counted. One fraud flag caps you at the first rung.
       </PageHead>
       <div className="cols flip">
@@ -73,7 +73,7 @@ export function StatusView() {
         </section>
         <aside className="rail" aria-label="Your standing">
           {!me ? (
-            <Empty title="Sign in to see your rung." action={<Link href="/ledger" className="btn sm">Go to the ledger</Link>}>The ladder is public. Your place on it is not.</Empty>
+            <Empty title="Sign in to see your level." action={<Link href="/ledger" className="btn sm">Go to earnings</Link>}>The ladder is public. Your place on it is not.</Empty>
           ) : (
             <>
               <span className="micro">Your tier</span>

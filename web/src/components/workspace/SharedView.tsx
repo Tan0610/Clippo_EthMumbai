@@ -14,12 +14,12 @@ export function SharedView() {
   const fn = useCallback(() => ws.shared(token), [token]);
   const r = useAsync(fn);
 
-  if (r.status === "loading") return <div className="wrap page"><Loading label="Pulling the shared copy" rows={6} /></div>;
+  if (r.status === "loading") return <div className="wrap page"><Loading label="Loading the shared copy" rows={6} /></div>;
   if (r.status === "error") return <div className="wrap page"><Correction what="The shared view did not load." fix={errText(r.error)} onRetry={r.retry} /></div>;
   if (!r.data)
     return (
       <div className="wrap page">
-        <Empty title="Nothing at this address." action={<Link href="/hire" className="btn sm">Go to Hire</Link>}>
+        <Empty title="Nothing at this address." action={<Link href="/hire" className="btn sm">Go to Hire creators</Link>}>
           The link may be cut short, or the campaigner has withdrawn it. Ask them for a new one.
         </Empty>
       </div>
@@ -33,7 +33,7 @@ export function SharedView() {
 
   return (
     <div className="wrap page">
-      <PageHead kicker={<><span>Shared view</span><span>No. {w.serial}</span><span>{funded ? "Funded" : "Draft"}</span></>} title={<>{w.title}</>}>
+      <PageHead kicker={<><span>Shared view</span><span>#{w.serial}</span><span>{funded ? "Funded" : "Draft"}</span></>} title={<>{w.title}</>}>
         {w.brief?.brand ? `${w.brief.brand} is hiring` : "Hiring"} {w.lines.length} creators. Everyone on the campaign sees the same page.
       </PageHead>
       <DemoNote />

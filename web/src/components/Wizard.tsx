@@ -312,7 +312,7 @@ export function Wizard() {
               {s.content === "generate" && (<><dt>Label</dt><dd><span className="x-label ai">AI-GENERATED</span></dd></>)}
               <dt>Platforms</dt><dd>{s.platforms.join(", ")}</dd>
               <dt>Payout</dt><dd>{s.pay.replace("_", " ")}{s.shareBy ? `, by ${s.shareBy.replace("_", " ")}` : ""}{s.approver ? `, ${s.approver.replace(/_/g, " ")}` : ""}</dd>
-              <dt>Pool</dt><dd>${money(s.pool, 0)} USDC</dd>
+              <dt>Budget</dt><dd>${money(s.pool, 0)} USDC</dd>
               {s.pay === "per_view" && (<><dt>Rate</dt><dd>${money(s.rate)} / 1K</dd></>)}
               <dt>Target</dt><dd>{s.target.toLocaleString()} views</dd>
               <dt>Who</dt><dd>{s.access}</dd>

@@ -48,7 +48,7 @@ export function Directory() {
 
   return (
     <div className="wrap page">
-      <PageHead kicker={<><span>Hire</span><span>Creator directory</span></>} title={<>Creators <em>for hire</em></>}>
+      <PageHead kicker={<><span>Hire creators</span><span>Creator directory</span></>} title={<>Creators <em>for hire</em></>}>
         Pick the people you want instead of opening a bounty. Rates are set by the creators, in USDC. Tiers come from approved clips and pass rate, never follower counts.
       </PageHead>
       <DemoNote />
@@ -129,7 +129,7 @@ export function Directory() {
             <h2 id="ads-h">Listings</h2>
             <span className="micro">{all.status === "ready" ? `${shown.length} of ${all.data.length}` : ""}</span>
           </div>
-          {all.status === "loading" && <Loading label="Setting the classifieds" rows={6} />}
+          {all.status === "loading" && <Loading label="Loading creators" rows={6} />}
           {all.status === "error" && <Correction what="The directory did not load." fix={errText(all.error)} onRetry={all.retry} />}
           {all.status === "ready" && shown.length === 0 && (
             <Empty title="No listing matches those filters." action={<button className="btn sm ghost" onClick={clear}>Clear filters</button>}>

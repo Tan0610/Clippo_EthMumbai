@@ -7,7 +7,7 @@ export const metadata: Metadata = { title: "Shared campaign view" };
 
 export default function Page() {
   return (
-    <Suspense fallback={<div className="wrap page"><Loading label="Pulling the shared copy" rows={5} /></div>}>
+    <Suspense fallback={<div className="wrap page"><Loading label="Loading the shared copy" rows={5} /></div>}>
       <SharedView />
     </Suspense>
   );

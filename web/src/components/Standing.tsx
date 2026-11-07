@@ -19,15 +19,15 @@ export function Standing() {
   return (
     <section className="section" aria-labelledby="standing">
       <div className="section-title">
-        <h2 id="standing">Standing</h2>
+        <h2 id="standing">Top creators</h2>
         <div className="seg" role="group" aria-label="Rank creators by">
           <button aria-pressed={sort === "views"} onClick={() => setSort("views")}>Verified views</button>
           <button aria-pressed={sort === "earnings"} onClick={() => setSort("earnings")}>Est. USDC</button>
         </div>
       </div>
-      <DemoNote label="Demo standing. The service did not answer, so these names and figures are sample data." />
+      <DemoNote label="Demo ranking. The service did not answer, so these names and figures are sample data." />
       {board.status === "loading" && <Loading label="Counting views" rows={5} />}
-      {board.status === "error" && <Correction what="Standing could not be tallied." fix="Nothing was changed. Try again." cause={board.error} onRetry={board.retry} />}
+      {board.status === "error" && <Correction what="The ranking could not be loaded." fix="Nothing was changed. Try again." cause={board.error} onRetry={board.retry} />}
       {board.status === "ready" && board.data.length === 0 && <Empty title="No one is on the board yet.">Creators appear here after their first approved clip collects views.</Empty>}
       {board.status === "ready" && board.data.length > 0 && (
         <div className="ledger-wrap">

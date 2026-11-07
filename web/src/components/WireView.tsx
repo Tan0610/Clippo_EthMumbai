@@ -29,8 +29,8 @@ export function WireView() {
 
   return (
     <div className="wrap page">
-      <PageHead kicker={<><span>The Wire</span><span>Open campaigns</span><DemoNote /></>} title={<>Campaigns paying <em>right now</em></>}>
-        Every slip is a funded USDC pool that an admin has signed. Pick one you can say true things about.
+      <PageHead kicker={<><span>Campaigns</span><span>Open now</span><DemoNote /></>} title={<>Campaigns paying <em>right now</em></>}>
+        Every campaign is a funded USDC pool that an admin has approved. Pick one you can say true things about.
       </PageHead>
 
       <div className="row-between" style={{ marginBottom: 24 }}>
@@ -67,11 +67,11 @@ export function WireView() {
       </div>
 
       <div aria-live="polite">
-        {camps.status === "loading" && <Loading label="Setting the wire" rows={5} />}
-        {camps.status === "error" && <Correction what="The wire did not come back." fix="Your campaigns are safe. Nothing was changed." cause={camps.error} onRetry={camps.retry} />}
+        {camps.status === "loading" && <Loading label="Loading campaigns" rows={5} />}
+        {camps.status === "error" && <Correction what="Campaigns did not load." fix="Your campaigns are safe. Nothing was changed." cause={camps.error} onRetry={camps.retry} />}
         {camps.status === "ready" && list.length === 0 && (
           <Empty
-            title="Nothing on the wire matches that."
+            title="No campaigns match that."
             clip={2}
             action={
               <button className="linkbtn" onClick={() => { setPlatform("all"); setMode("all"); }}>

@@ -63,7 +63,7 @@ export function LedgerView() {
 
   return (
     <div className="wrap page">
-      <PageHead kicker={<><span>The Ledger</span><span>Creator earnings</span><DemoNote /></>} title={<>What you&rsquo;re <em>owed</em></>}>
+      <PageHead kicker={<><span>Earnings</span><span>Creator</span><DemoNote /></>} title={<>What you&rsquo;re <em>owed</em></>}>
         Settled amounts, ready to pull. The creator fee comes off when you claim. Nobody else can hold your money up.
       </PageHead>
 

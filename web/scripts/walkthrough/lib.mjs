@@ -74,7 +74,7 @@ export const api = (page, path, init) => page.evaluate(async ([p, i]) => { const
 export async function signIn(page, roleRe) {
   await page.goto(BASE + "/", { waitUntil: "networkidle", timeout: 90000 });
   await page.getByRole("button", { name: "Connect wallet" }).first().click();
-  const dlg = page.getByRole("dialog", { name: /Which desk/ });
+  const dlg = page.getByRole("dialog", { name: /How will you use Clippo/ });
   const hit = await Promise.race([dlg.waitFor({ timeout: 20000 }).then(() => "sheet"), page.getByRole("button", { name: /Signed in as/ }).waitFor({ timeout: 20000 }).then(() => "in")]).catch(() => "timeout");
   if (hit === "sheet") { await page.getByRole("button", { name: roleRe }).click(); await page.getByRole("button", { name: /Signed in as/ }).waitFor({ timeout: 20000 }); }
   return (await api(page, "/api/auth/me")).body?.user;

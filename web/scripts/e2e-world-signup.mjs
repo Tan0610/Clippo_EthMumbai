@@ -65,7 +65,7 @@ async function toVerifyStep(page) {
   await page.getByRole("button", { name: "Connect wallet" }).first().click();
   const pick = page.getByTestId("wallet-picker");
   if (await pick.isVisible().catch(() => false)) await pick.getByRole("button", { name: /Alpha/ }).click();
-  await page.getByRole("dialog", { name: /Which desk/ }).waitFor({ timeout: 4000 }).then(() => page.getByRole("button", { name: /I clip: creator/ }).click()).catch(() => {});
+  await page.getByRole("dialog", { name: /How will you use Clippo/ }).waitFor({ timeout: 4000 }).then(() => page.getByRole("button", { name: /I clip: creator/ }).click()).catch(() => {});
   await page.getByRole("button", { name: "Verify with World ID" }).waitFor({ timeout: 10000 });
 }
 

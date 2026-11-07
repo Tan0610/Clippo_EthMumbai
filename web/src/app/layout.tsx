@@ -1,28 +1,20 @@
 import type { Metadata, Viewport } from "next";
 import { Suspense } from "react";
-import { Bodoni_Moda, Schibsted_Grotesk, Martian_Mono } from "next/font/google";
+import { Lexend, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import "./testdeploy.css";
 import { Masthead, Dateline, Footer, TestnetBanner } from "@/components/Shell";
-import { InkFilter } from "@/components/Stamp";
+import { UiFx } from "@/components/ui/UiFx";
 
-const display = Bodoni_Moda({
-  variable: "--font-display",
-  subsets: ["latin"],
-  style: ["normal", "italic"],
-  weight: ["500", "600", "700"],
-  display: "swap",
-});
-const text = Schibsted_Grotesk({
+// One family for the whole interface (variable font, weights 100-900) plus a mono for money, addresses and hashes.
+const text = Lexend({
   variable: "--font-text",
   subsets: ["latin"],
-  weight: ["400", "500", "700"],
   display: "swap",
 });
-const mono = Martian_Mono({
+const mono = JetBrains_Mono({
   variable: "--font-mono",
   subsets: ["latin"],
-  weight: ["400", "500", "700"],
   display: "swap",
 });
 
@@ -37,21 +29,14 @@ export const metadata: Metadata = {
     "Fund a USDC pool. Verified humans post clips. An agent checks each one against your brief. Views settle on-chain, creators claim their own money.",
 };
 
-// Runs before paint so a saved "Night"/"Paper" choice never flashes the other one.
-const themeInit = `try{var t=localStorage.getItem('clippo-theme');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t)}catch(e){}`;
-
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${display.variable} ${text.variable} ${mono.variable}`} suppressHydrationWarning>
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: themeInit }} />
-      </head>
+    <html lang="en" className={`${text.variable} ${mono.variable}`} suppressHydrationWarning>
       <body>
         <a className="skip" href="#main">
           Skip to content
         </a>
         <TestnetBanner />
-        <InkFilter />
         <Dateline />
         <Suspense fallback={<header className="masthead" style={{ minHeight: 96 }} />}>
           <Masthead />
@@ -60,6 +45,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           {children}
         </main>
         <Footer />
+        <UiFx />
       </body>
     </html>
   );

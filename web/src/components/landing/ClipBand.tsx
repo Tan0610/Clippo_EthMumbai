@@ -36,10 +36,10 @@ const ROWS: Tile[][] = [
   ],
 ];
 
-function ClipSlip({ t, i }: { t: Tile; i: number }) {
+function ClipSlip({ t }: { t: Tile }) {
   return (
     <li className="cb-slip">
-      <LoopClip n={t.n as ClipId} caption={`No. ${String(i + 1).padStart(2, "0")} · ${t.who}`} meta={t.len} />
+      <LoopClip n={t.n as ClipId} caption={t.who} meta={t.len} />
     </li>
   );
 }
@@ -75,16 +75,16 @@ export function ClipBand() {
   }, []);
 
   return (
-    <div className="cb" ref={band} role="group" aria-label="Sample clips on the wire">
+    <div className="cb" ref={band} role="group" aria-label="Sample clips">
       <div className="cb-head micro">
-        <span>On the wire this week</span>
+        <span>Clips creators post</span>
         <span>Sample footage, not real creators</span>
       </div>
       <div className="cb-clip">
         {ROWS.map((row, r) => (
           <ul key={r} className="cb-row" style={{ ["--dir" as string]: r % 2 === 0 ? -1 : 1 }}>
             {row.map((t, i) => (
-              <ClipSlip key={i} t={t} i={r * 8 + i} />
+              <ClipSlip key={i} t={t} />
             ))}
           </ul>
         ))}

@@ -1,6 +1,6 @@
 import type { ReactNode, SVGProps } from "react";
 
-/* Hand-inked icon set: 24px grid, 1.5 stroke, square caps, mitre joins, endpoints nudged off-grid on purpose. */
+/* Icon set: 24px grid, 1.6 stroke, round caps and joins. */
 type P = SVGProps<SVGSVGElement> & { size?: number; title?: string };
 
 function Base({ size = 20, title, children, ...rest }: P & { children: ReactNode }) {
@@ -11,9 +11,9 @@ function Base({ size = 20, title, children, ...rest }: P & { children: ReactNode
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="square"
-      strokeLinejoin="miter"
+      strokeWidth={1.6}
+      strokeLinecap="round"
+      strokeLinejoin="round"
       role={title ? "img" : undefined}
       aria-label={title}
       aria-hidden={title ? undefined : true}
@@ -137,10 +137,10 @@ export function VerifiedMark({ size = 16 }: { size?: number }) {
 /* Wordmark glyph: two blades crossing, the slit between them is the "clip". */
 export function Blades() {
   return (
-    <svg viewBox="0 0 34 22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square" aria-hidden="true">
-      <path d="M1 2.4 28 19.4" />
-      <path d="M1 19.6 28 2.6" />
-      <path d="M30 6.6h3.4M30 15.4h3.4" stroke="var(--signal)" />
+    <svg viewBox="0 0 34 22" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+      <path d="M3 3.4 26 18.6" />
+      <path d="M3 18.6 26 3.4" />
+      <path d="M30 7.4h1.6M30 14.6h1.6" stroke="var(--signal)" />
     </svg>
   );
 }

@@ -50,7 +50,7 @@ export function ShareBox({ ids }: { ids: string[] }) {
         <label htmlFor="lt">List name</label>
         <input id="lt" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Q4 finance explainers" maxLength={60} />
       </div>
-      <button className="btn sm ghost" onClick={make} disabled={busy}>{busy ? "Setting type" : "Make shareable link"}</button>
+      <button className="btn sm ghost" onClick={make} disabled={busy}>{busy ? "Working…" : "Make shareable link"}</button>
     </div>
   );
 }

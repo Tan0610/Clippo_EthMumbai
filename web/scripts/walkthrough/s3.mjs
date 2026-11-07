@@ -4,7 +4,7 @@ const b = await L.launch();
 const { page, issues } = await L.walletPage(b, s.campaigner, "campaigner");
 await page.goto(L.BASE + "/", { waitUntil: "networkidle", timeout: 90000 });
 await page.getByRole("button", { name: "Connect wallet" }).first().click();
-const dlg = page.getByRole("dialog", { name: /Which desk/ });
+const dlg = page.getByRole("dialog", { name: /How will you use Clippo/ });
 await dlg.waitFor({ timeout: 15000 });
 console.log(await dlg.innerText());
 await L.shot(page, "05-role-sheet");

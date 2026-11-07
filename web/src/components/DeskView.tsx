@@ -120,7 +120,7 @@ export function DeskView() {
 
   return (
     <div className="wrap page">
-      <PageHead kicker={<><span>The Desk</span><span>Campaigner</span><DemoNote /></>} title={<>Your <em>campaigns</em></>}>
+      <PageHead kicker={<><span>My campaigns</span><span>Brand</span><DemoNote /></>} title={<>Your <em>campaigns</em></>}>
         What is live, what is waiting on you, and what is still in escrow.
       </PageHead>
       <div className="row" style={{ marginBottom: 32 }}>
@@ -167,7 +167,7 @@ export function DeskView() {
                   <tr key={c.id}>
                     <td className="lead-cell">
                       <Link href={`/slips/${c.id}`} className="handle">{c.title}</Link>
-                      <span className="sub">No. {c.serial} · {MODE_LABEL[c.mode]} · {c.status.replace("_", " ")}</span>
+                      <span className="sub">#{c.serial} · {MODE_LABEL[c.mode]} · {c.status.replace("_", " ")}</span>
                     </td>
                     <td data-l="Pool used" style={{ minWidth: 140 }}><TickBar pct={(c.paid / c.pool) * 100} label={`${Math.round((c.paid / c.pool) * 100)} percent used`} /></td>
                     <td className="n" data-l="Allocated">${money(c.paid, 0)} / {money(c.pool, 0)}</td>
@@ -214,7 +214,7 @@ export function DeskView() {
                 <div className="stack" style={{ gap: 8 }}>
                   <span className="micro">{s.handle} · {s.platform}</span>
                   <a href={s.url} target="_blank" rel="noreferrer noopener" style={{ fontWeight: 700 }}>{s.title}</a>
-                  <div className="note"><span className="micro">Agent note</span>{s.reason}</div>
+                  <div className="note"><span className="micro">AI reason</span>{s.reason}</div>
                 </div>
                 <div className="stack" style={{ justifyItems: "end", alignContent: "start" }}>
                   {decided[s.id] ? <span className="micro" role="status">{decided[s.id]}</span> : (

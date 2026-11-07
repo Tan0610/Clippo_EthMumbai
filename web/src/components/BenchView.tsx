@@ -97,7 +97,7 @@ export function BenchView() {
 
   return (
     <div className="wrap page">
-      <PageHead kicker={<><span>The Bench</span><span>Admin</span><DemoNote /></>} title={<>Read it, then <em>decide</em></>}>
+      <PageHead kicker={<><span>Admin review</span><span>Admin</span><DemoNote /></>} title={<>Read it, then <em>decide</em></>}>
         The assistant ranks the queue and summarises each dispute. It recommends. A person signs.
       </PageHead>
 

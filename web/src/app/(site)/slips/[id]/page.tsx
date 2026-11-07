@@ -7,7 +7,7 @@ export default function Page() {
     <Suspense
       fallback={
         <div className="wrap page">
-          <Loading label="Pulling the slip" rows={6} />
+          <Loading label="Loading campaign" rows={6} />
         </div>
       }
     >

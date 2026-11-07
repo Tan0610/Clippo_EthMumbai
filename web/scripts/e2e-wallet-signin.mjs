@@ -65,7 +65,7 @@ const me = (page) => page.evaluate(() => fetch("/api/auth/me").then((r) => r.jso
   await page.getByTestId("wallet-picker").waitFor({ timeout: 5000 });
   check("picker lists both wallets", (await page.getByTestId("wallet-picker").getByRole("button", { name: /Alpha|Beta/ }).count()) === 2);
   await page.getByTestId("wallet-picker").getByRole("button", { name: "Beta" }).click();
-  await page.getByRole("dialog", { name: /Which desk/ }).waitFor({ timeout: 8000 });
+  await page.getByRole("dialog", { name: /How will you use Clippo/ }).waitFor({ timeout: 8000 });
   await page.getByRole("button", { name: /I clip: creator/ }).click();
   await page.locator("button.wallet", { hasText: account.address.slice(0, 6) }).waitFor({ timeout: 8000 });
   const u = (await me(page)).user;

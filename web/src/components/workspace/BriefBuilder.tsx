@@ -94,12 +94,12 @@ export function BriefBuilder() {
       </span>
     ) : null;
 
-  if (all.status === "loading") return <div className="wrap page"><Loading label="Pulling your clipped list" rows={4} /></div>;
+  if (all.status === "loading") return <div className="wrap page"><Loading label="Loading your shortlist" rows={4} /></div>;
   if (all.status === "error") return <div className="wrap page"><Correction what="The directory did not load." fix={errText(all.error)} onRetry={all.retry} /></div>;
   if (picked.length === 0)
     return (
       <div className="wrap page">
-        <PageHead kicker={<><Link href="/hire">Hire</Link><span>Brief</span></>} title={<>Write the <em>brief</em></>}>
+        <PageHead kicker={<><Link href="/hire">Hire creators</Link><span>Brief</span></>} title={<>Write the <em>brief</em></>}>
           A brief needs creators to send it to.
         </PageHead>
         <Empty title="Nobody is clipped yet." action={<Link href="/hire" className="btn sm">Open the directory</Link>}>
@@ -113,7 +113,7 @@ export function BriefBuilder() {
 
   return (
     <div className="wrap page">
-      <PageHead kicker={<><Link href="/hire">Hire</Link><span>Brief</span><span>{picked.length} creators</span></>} title={<>Write the <em>brief</em></>}>
+      <PageHead kicker={<><Link href="/hire">Hire creators</Link><span>Brief</span><span>{picked.length} creators</span></>} title={<>Write the <em>brief</em></>}>
         One brief goes to every creator on the list. Each one gets their own rate, and nothing is charged until you approve and fund.
       </PageHead>
       <DemoNote />
@@ -202,7 +202,7 @@ export function BriefBuilder() {
                 <div className="ws-offer" key={c.id}>
                   <div className="who">
                     <b>{c.name}</b>
-                    <span className="micro">No. {c.serial} · {c.tier}</span>
+                    <span className="micro">#{c.serial} · {c.tier}</span>
                   </div>
                   <div className="field">
                     <label htmlFor={`d-${c.id}`}>Rate line, set by the creator</label>
@@ -235,7 +235,7 @@ export function BriefBuilder() {
 
         <div className="row" style={{ gap: 24 }}>
           {isCampaigner ? (
-            <button className="btn" type="submit" disabled={busy}>{busy ? "Setting type" : `Send to ${picked.length} creators`}</button>
+            <button className="btn" type="submit" disabled={busy}>{busy ? "Working…" : `Send to ${picked.length} creators`}</button>
           ) : (
             <div className="notice">
               <b>Briefs are sent from a campaigner wallet.</b>

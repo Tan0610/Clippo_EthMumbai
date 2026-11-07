@@ -136,11 +136,11 @@ export function FundView() {
               <h2 id="done" className="sr">Funded</h2>
               {tx && <div className="notice" role="status"><b>Transfer confirmed and verified</b><span className="fig" style={{ fontSize: "0.8rem", wordBreak: "break-all" }}>tx {tx}</span></div>}
               <p className="prose">
-                {status === "live" ? "Creators can join and submit clips." : "You will see the decision here and on your desk. Until then the pool, rate and payout rule are locked."}
+                {status === "live" ? "Creators can join and submit clips." : "You will see the decision here and on My campaigns. Until then the pool, rate and payout rule are locked."}
               </p>
               <div className="row" style={{ gap: 20 }}>
-                <Link href="/desk" className="btn">Go to the desk</Link>
-                <Link href="/wire" className="btn ghost">See the wire</Link>
+                <Link href="/desk" className="btn">Go to my campaigns</Link>
+                <Link href="/wire" className="btn ghost">Browse campaigns</Link>
               </div>
             </section>
           )}
@@ -149,7 +149,7 @@ export function FundView() {
         <aside className="rail" aria-label="What this costs">
           <span className="micro">The arithmetic</span>
           <dl className="kv">
-            <dt>Pool</dt><dd>{money(pool)}</dd>
+            <dt>Budget</dt><dd>{money(pool)}</dd>
             <dt>Gas</dt><dd>paid in USDC</dd>
           </dl>
           {prev.status === "ready" && prev.data ? (
