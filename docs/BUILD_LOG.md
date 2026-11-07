@@ -52,6 +52,8 @@ What changed:
 - Site redeployed from `main` at `bb2fbec` (includes another session's OpenAI provider commit). Live `/api/health`: `llm`, `worldId`, `adminWallets` true; `ready` still false (no file storage).
 - New `cre/scripts/set-admin.sh`: owner-only, hidden key prompt, refuses a key that is not the escrow `owner()`, calls `setAdmin(address,bool)`, prints `isAdmin` after.
 
+First owner run failed before sending anything: the public Arc RPC answered HTTP 429 (rate limit) on the first read. Fixed: the script now probes both official hosts and retries. The retried run is not yet done by the owner.
+
 Checked (read-only, on Arc testnet): escrow `owner()` = `0x8CF9…60e5`; `isAdmin(0xC201…6325)` was false before; the script's syntax and address validation were run.
 
 Not proven: the on-chain `setAdmin(0xC201…6325, true)` has NOT been sent (needs the owner key). No tx hash yet. The admin sign-in on the live site was not tested. The OpenAI model name `gpt-6-luna` is unverified and not in use.
