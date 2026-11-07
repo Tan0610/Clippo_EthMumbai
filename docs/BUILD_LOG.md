@@ -57,7 +57,8 @@ Track status at the start:
 **Files:** `web/src/app/globals.css`, `layout.tsx`, `landing.css`, `testdeploy.css`, `page.tsx`; `web/src/components/` Shell, Stamp, Icons, Bits, LoopClip(.css), ext/market/confirmed/service-state/wallet-picker CSS, `landing/*`, `workspace/*`, copy in a few views; new `ui/UiFx.tsx`, `landing/HeroStage.tsx`; plan in `docs/ui/07-ui-transformation-plan.md`.
 
 **Tests:** typecheck, lint (0 errors), vitest 325 passed / 1 skipped, same as before the change. Screenshots of the main screens checked at 1440 and 390 px.
-**Not proven:** the wallet/World ID e2e scripts were not run (they need a database and keys). Not every page was visually checked on every state (signed-in dashboards, wizard steps 2 to 8, fund page).
+**Fix after first deploy:** the wallet dialogs (picker, role chooser, error) were unclickable because the new header ignores pointer events and the dialogs live inside it; `.sheet-back` now takes pointer events again, and the wallet button stays on the bar on phones. Verified with the mock-wallet e2e (`e2e-wallet-signin`, `e2e-world-signup`, both pass), a hit-test of every clickable element on 15 routes at 1440 and 390 px (0 covered), and the API e2e (30 of 32 pass; the 2 failures are a stale test that sends `APPROVED_CLIPS` while the backend has required views since `e58208b`).
+**Not proven:** real MetaMask on the live site was not exercised by me. Not every page was visually checked on every state (signed-in dashboards, wizard steps 2 to 8, fund page).
 
 ### 25. UI guide written from the code and screenshots, commit pending
 
