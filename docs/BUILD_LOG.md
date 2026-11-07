@@ -45,7 +45,15 @@ Track status at the start:
 
 ## Log
 
-### 24. Admin wallet setup: Vercel variables, ADMIN_WALLETS, owner script, commit pending
+### 25. UI guide written from the code and screenshots, commit pending
+
+What changed: new `docs/UI.md` (entry guide: fonts, color tokens, routes, label proposals, biggest problems) and six detail files in `docs/ui/` (design system, shell and routes, brand and admin screens, creator screens, visual pass, glossary and copy). 16 desktop Paper screenshots in `docs/ui/shots/`. Why: the owner finds the newspaper names hard to understand and wants one reference to improve the UX. No app code changed.
+
+How it was made: six read-only agents read the code (file:line given) and one took screenshots of the demo build (`NEXT_PUBLIC_DEMO=1`, API calls blocked, so sample data).
+
+Not proven: nothing was run against a wallet, World ID, YouTube or the chain. The optional pages (`/profile`, `/referrals`, `/status`) were captured with stand-in data written by the screenshot agent. Night and phone views were only partly reviewed and are not kept in the repo. All label and naming changes are proposals; the owner has not chosen between the two naming options (we recommend keeping the newspaper names with a plain sub-label).
+
+### 24. Admin wallet setup: Vercel variables, ADMIN_WALLETS, owner script, commits `26833ea` and `2112d2b`
 
 What changed:
 - Vercel production variables added (names only; values never printed): `GEMINI_API_KEY`, `LLM_PROVIDER=gemini` (explicit, because main now also supports OpenAI and would prefer it when both keys exist), `OPENAI_API_KEY`, `OPENAI_MODEL` (stored for later, not in use), `WORLD_ID_APP_ID`, `WORLD_ID_RP_ID`, `WORLD_ID_SIGNING_KEY`, `WORLD_ID_ENVIRONMENT=staging`, `AGENT_PASS_DEMO`, and `ADMIN_WALLETS=0xC201…6325`. Not added on purpose: other keys from a different project's `.env` (deployer and gate keys), and the creator wallet `0x8CF9…60e5` is not an admin in the app.
@@ -56,7 +64,9 @@ First owner run failed before sending anything: the public Arc RPC answered HTTP
 
 Checked (read-only, on Arc testnet): escrow `owner()` = `0x8CF9…60e5`; `isAdmin(0xC201…6325)` was false before; the script's syntax and address validation were run.
 
-Not proven: the on-chain `setAdmin(0xC201…6325, true)` has NOT been sent (needs the owner key). No tx hash yet. The admin sign-in on the live site was not tested. The OpenAI model name `gpt-6-luna` is unverified and not in use.
+Done by the owner (script run with their hidden key prompt): `setAdmin(0xC201…6325, true)` on the escrow, tx `0x0cb1be4ef6c1a0fce16398c9c7340f1d09c73b0baaf1859b8da0eee263fd06a1`, block 71117141, status success. Re-checked read-only afterwards through `rpc.testnet.arc.network`: `isAdmin(0xC201…6325)` = true.
+
+Not proven: the admin sign-in on the live site (open `/bench` with that wallet) was not tested. The OpenAI model name `gpt-6-luna` is unverified and not in use.
 
 ### 22. PR #2 merged into main and the site redeployed from main, no repo commit
 
